@@ -11,16 +11,70 @@ app.config['JSON_AS_ASCII'] = False
 # =====================
 # CONFIG
 # =====================
-TOKEN = "8165343576:AAGr_uWTBUMGCgcdahiCicHN3DehLaBOUf0"
+TOKEN = "PUT_YOUR_TOKEN"
 CHANNEL = "@AndriaGold"
 
-cache = {"data": None, "time": 0}
 CACHE_TIME = 60
+cache = {"data": None, "time": 0}
 
 last_sent = None
 
 # =====================
-# SCRAPING
+# GET RAW HTML ONCE
+# =====================
+def fetch_html():
+    url = "https://edahabapp.com/"
+    headers = {"User-Agent": "Mozilla/5.0"}
+    res = requests.get(url, headers=headers, timeout=10)
+    return res.text
+
+# =====================
+# PARSE SNAPSHOT
+# =====================
+def parse_data(html):
+    soup = BeautifulSoup(html, "html.parser")
+
+    prices = {}
+    items = soup.find_all("div", class_="price-item")
+
+    gram_24 = None
+    ounce_usd = None
+
+    for item in items:
+        title = item.find("span", class_="font-medium")
+        numbers = item.find_all("span", class_="number-font")
+
+        if not title or len(numbers) == 0:
+            continue
+
+        name = title.text.strip()
+
+        # ===== GOLD PRICES =====
+        if "عيار" in name:
+            if len(numbers) >= 2:
+                buy = float(numbers[0].text.replace(",", "").strip())
+                sell = float(numbers[1].text.replace(",", "").strip())
+
+                prices[name] = {
+                    "بيع": sell,
+                    "شراء": buy
+                }
+
+                if "24" in name:
+                    gram_24 = sell  # ثابت
+
+        # ===== OUNCE =====
+        if "أوقية" in name:
+            try:
+                ounce_usd = float(numbers[0].text.replace(",", "").strip())
+                prices["الأوقية العالمية"] = ounce_usd
+            except:
+                pass
+
+    return prices, gram_24, ounce_usd
+
+# =====================
+# MAIN DATA FUNCTION (STABLE SNAPSHOT)
 # =====================
 def get_all_prices():
     global cache
@@ -28,72 +82,27 @@ def get_all_prices():
     if time.time() - cache["time"] < CACHE_TIME:
         return cache["data"]
 
-    url = "https://edahabapp.com/"
-    headers = {"User-Agent": "Mozilla/5.0"}
+    html = fetch_html()
+    prices, gram_24, ounce_usd = parse_data(html)
 
-    try:
-        res = requests.get(url, headers=headers, timeout=10)
-        soup = BeautifulSoup(res.text, "html.parser")
+    # =====================
+    # DOLLAR SAGHA (FIXED FORMULA)
+    # =====================
+    if gram_24 and ounce_usd:
+        dollar_sagha = (gram_24 * 31.103) / ounce_usd
+        prices["دولار الصاغة"] = round(dollar_sagha, 2)
 
-        prices = {}
-        items = soup.find_all("div", class_="price-item")
-
-        gram_24 = None
-        ounce_usd = None
-
-        for item in items:
-            title = item.find("span", class_="font-medium")
-            numbers = item.find_all("span", class_="number-font")
-
-            if not title or len(numbers) == 0:
-                continue
-
-            name = title.text.strip()
-
-            # ===== أسعار الذهب =====
-            if "عيار" in name:
-                if len(numbers) >= 2:
-                    buy = float(numbers[0].text.replace(",", ""))
-                    sell = float(numbers[1].text.replace(",", ""))
-
-                    prices[name] = {
-                        "بيع": sell,
-                        "شراء": buy
-                    }
-
-                    if "24" in name:
-                        gram_24 = sell
-
-            # ===== الأوقية =====
-            if "أوقية" in name:
-                try:
-                    ounce_usd = float(numbers[0].text.replace(",", ""))
-                    prices["الأوقية العالمية"] = ounce_usd
-                except:
-                    pass
-
-        # =====================
-        # دولار الصاغة
-        # =====================
-        dollar_sagha = None
-        if gram_24 and ounce_usd:
-            dollar_sagha = (gram_24 * 31.103) / ounce_usd
-            prices["دولار الصاغة"] = round(dollar_sagha, 2)
-
-        cache = {"data": prices, "time": time.time()}
-        return prices
-
-    except Exception as e:
-        return {"error": str(e)}
+    cache = {"data": prices, "time": time.time()}
+    return prices
 
 # =====================
-# TELEGRAM FORMAT (PRO)
+# TELEGRAM MESSAGE
 # =====================
 def format_message(data):
     global last_sent
 
     msg = "💎 <b>تحديث أسعار الذهب</b>\n\n"
-    msg += "📊 <b>الأسعار الحالية</b>\n"
+    msg += "📊 <b>الأسعار</b>\n"
     msg += "━━━━━━━━━━━━━━\n"
 
     trend = ""
@@ -102,11 +111,11 @@ def format_message(data):
         diff = data["دولار الصاغة"] - last_sent["دولار الصاغة"]
 
         if diff > 0:
-            trend = f"\n📈 دولار الصاغة زاد +{round(diff,2)}"
+            trend = f"\n📈 ارتفع +{round(diff,2)}"
         elif diff < 0:
-            trend = f"\n📉 دولار الصاغة قل {round(diff,2)}"
+            trend = f"\n📉 نزل {round(diff,2)}"
         else:
-            trend = "\n⚖️ بدون تغيير"
+            trend = "\n⚖️ ثابت"
 
     for k, v in data.items():
         if isinstance(v, dict):
@@ -123,7 +132,7 @@ def format_message(data):
     return msg
 
 # =====================
-# SEND TO TELEGRAM
+# SEND TELEGRAM
 # =====================
 def send_to_channel(message):
     url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
