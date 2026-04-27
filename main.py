@@ -12,7 +12,7 @@ app.config['JSON_AS_ASCII'] = False
 # =====================
 # CONFIG
 # =====================
-TOKEN = "https://t.me/AndriaGold"
+TOKEN = "8165343576:AAGr_uWTBUMGCgcdahiCicHN3DehLaBOUf0"
 CHANNEL = "@AndriaGold"
 
 CACHE_TIME = 60
