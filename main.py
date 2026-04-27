@@ -63,7 +63,7 @@ def get_snapshot():
             data["الأوقية العالمية"] = float(ounce)
 
     # =====================
-    # DOLLAR SAGHA (YOU ONLY CALCULATE HERE)
+    # DOLLAR SAGHA
     # =====================
     if gram_24 and ounce:
         raw = (gram_24 * Decimal("31.103")) / ounce
@@ -87,7 +87,6 @@ def send(msg):
 # =====================
 def format(data):
     msg = "💎 <b>تحديث أسعار الذهب</b>\n\n"
-
     msg += "━━━━━━━━━━━━━━\n"
 
     for k, v in data.items():
@@ -109,7 +108,7 @@ while True:
     try:
         data = get_snapshot()
 
-        global last_data
+        # ✔ بدون global هنا
         if data != last_data:
             send(format(data))
             last_data = data
