@@ -11,14 +11,17 @@ app.config['JSON_AS_ASCII'] = False
 # =====================
 # CONFIG
 # =====================
-TOKEN = "8165343576:AAGr_uWTBUMGCgcdahiCicHN3DehLaBOUf0"
-CHANNEL = "@AndriaGold"
+TOKEN = "PUT_YOUR_BOT_TOKEN"
+CHANNEL = "@your_channel"
 
 # =====================
 # CACHE
 # =====================
 cache = {"data": None, "time": 0}
 CACHE_TIME = 60
+
+# آخر رسالة اتبعتت (عشان نعرف التغيير)
+last_sent = None
 
 # =====================
 # SCRAPING
@@ -64,21 +67,21 @@ def get_all_prices():
         return {"error": str(e)}
 
 # =====================
-# TELEGRAM
+# TELEGRAM SEND
 # =====================
 def send_to_channel(message):
     url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
-    data = {
+    requests.post(url, data={
         "chat_id": CHANNEL,
         "text": message,
         "parse_mode": "HTML"
-    }
-    requests.post(url, data=data)
+    })
 
-def send_prices():
-    data = get_all_prices()
-
-    msg = "💰 <b>أسعار الذهب الآن</b>\n\n"
+# =====================
+# FORMAT MESSAGE
+# =====================
+def format_message(data):
+    msg = "💰 <b>تحديث أسعار الذهب</b>\n\n"
 
     for k, v in data.items():
         if isinstance(v, dict):
@@ -87,15 +90,23 @@ def send_prices():
         else:
             msg += f"{k}: {v}\n"
 
-    send_to_channel(msg)
+    return msg
 
 # =====================
-# LOOP (كل 5 دقائق)
+# AUTO UPDATE (ONLY IF CHANGED)
 # =====================
 def loop():
+    global last_sent
+
     while True:
-        send_prices()
-        time.sleep(300)
+        data = get_all_prices()
+
+        if data and data != last_sent:
+            msg = format_message(data)
+            send_to_channel(msg)
+            last_sent = data
+
+        time.sleep(60)  # check كل دقيقة
 
 # =====================
 # API
@@ -105,7 +116,7 @@ def api():
     return jsonify(get_all_prices())
 
 # =====================
-# FRONTEND
+# WEB
 # =====================
 @app.route("/")
 def home():
