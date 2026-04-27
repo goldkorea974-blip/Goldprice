@@ -12,28 +12,25 @@ URL = "https://edahabapp.com/"
 
 getcontext().prec = 28
 
-last_final_price = None
+last_sent_value = None
 
 # =====================
-# SAFE DECIMAL
+# DECIMAL CLEAN
 # =====================
 def D(x):
     return Decimal(x.replace(",", "").strip())
 
 # =====================
-# SNAPSHOT
+# SNAPSHOT ENGINE
 # =====================
-def fetch_snapshot():
-    headers = {"User-Agent": "Mozilla/5.0"}
-    html = requests.get(URL, headers=headers, timeout=10).text
-
+def get_snapshot():
+    html = requests.get(URL, headers={"User-Agent": "Mozilla/5.0"}).text
     soup = BeautifulSoup(html, "html.parser")
     items = soup.find_all("div", class_="price-item")
 
+    data = {}
     gram_24 = None
     ounce = None
-
-    data = {}
 
     for item in items:
         title = item.find("span", class_="font-medium")
@@ -44,6 +41,7 @@ def fetch_snapshot():
 
         name = title.text.strip()
 
+        # ===== GOLD PRICES =====
         if "عيار" in name and len(nums) >= 2:
             buy = D(nums[0].text)
             sell = D(nums[1].text)
@@ -56,59 +54,21 @@ def fetch_snapshot():
             if "24" in name:
                 gram_24 = sell
 
+        # ===== OUNCE =====
         if "أوقية" in name:
             ounce = D(nums[0].text)
 
-    return data, gram_24, ounce
-
-# =====================
-# STABLE CALC ENGINE
-# =====================
-def calculate_stable():
-    data, gram_24, ounce = fetch_snapshot()
-
-    if not gram_24 or not ounce:
-        return None
-
-    raw = (gram_24 * Decimal("31.103")) / ounce
-    dollar = raw.quantize(Decimal("0.01"))
-
     # =====================
-    # SELF CORRECTION LOGIC
+    # CALCULATION (EXACT)
     # =====================
-    global last_final_price
+    dollar = None
 
-    if last_final_price is not None:
-        diff = abs(dollar - last_final_price)
+    if gram_24 and ounce:
+        raw = (gram_24 * Decimal("31.103")) / ounce
+        dollar = raw.quantize(Decimal("0.01"))
+        data["دولار الصاغة"] = dollar
 
-        # ⚠️ لو الفرق صغير جدًا → نثبت القيمة السابقة
-        if diff <= Decimal("0.05"):
-            dollar = last_final_price
-
-    last_final_price = dollar
-
-    data["دولار الصاغة"] = dollar
-
-    return data
-
-# =====================
-# FORMAT MESSAGE
-# =====================
-def format_msg(data):
-    msg = "💎 <b>Gold Stable Engine</b>\n\n"
-    msg += "━━━━━━━━━━━━━━\n"
-
-    for k, v in data.items():
-        if isinstance(v, dict):
-            msg += f"🔸 {k}\n"
-            msg += f"بيع: {v['sell']} | شراء: {v['buy']}\n"
-            msg += "──────────────\n"
-        else:
-            msg += f"📌 {k}: {v}\n"
-
-    msg += "━━━━━━━━━━━━━━\n⚡ Self-Corrected Stable Price"
-
-    return msg
+    return data, dollar
 
 # =====================
 # TELEGRAM SEND
@@ -122,14 +82,49 @@ def send(msg):
     })
 
 # =====================
-# LOOP
+# FORMAT MESSAGE
+# =====================
+def format_msg(data):
+    msg = "💎 <b>تحديث أسعار الذهب</b>\n\n"
+    msg += "━━━━━━━━━━━━━━\n"
+
+    for k, v in data.items():
+        if isinstance(v, dict):
+            msg += f"🔸 {k}\n"
+            msg += f"بيع: {v['sell']} | شراء: {v['buy']}\n"
+            msg += "──────────────\n"
+        else:
+            msg += f"📌 {k}: {v}\n"
+
+    msg += "━━━━━━━━━━━━━━\n⚡ Precision Engine"
+
+    return msg
+
+# =====================
+# LOOP + VERIFIER
 # =====================
 while True:
     try:
-        result = calculate_stable()
+        data, dollar = get_snapshot()
 
-        if result:
-            send(format_msg(result))
+        if dollar is not None:
+            global last_sent_value
+
+            # =====================
+            # VERIFICATION (0.01 check)
+            # =====================
+            if last_sent_value is not None:
+                diff = abs(dollar - last_sent_value)
+
+                if diff > Decimal("0.01"):
+                    print("⚠️ Difference detected:", diff)
+
+            # =====================
+            # SEND ONLY IF CHANGED
+            # =====================
+            if dollar != last_sent_value:
+                send(format_msg(data))
+                last_sent_value = dollar
 
     except Exception as e:
         print("Error:", e)
