@@ -118,63 +118,88 @@ def format_message(data):
             trend = "\n⚖️ ثابت"
 
     for k, v in data.items():
-        if isinstance(v, dict):
-            msg += f"🔸 {k}\n"
-            msg += f"بيع: {v['بيع']} | شراء: {v['شراء']}\n"
-            msg += "──────────────\n"
-        else:
-            msg += f"📌 {k}: {v}\n"
+import requests
+from bs4 import BeautifulSoup
+from decimal import Decimal, getcontext
+import time
 
-    msg += "━━━━━━━━━━━━━━"
-    msg += trend
-    msg += "\n⚡ تحديث تلقائي"
-
-    return msg
+# 🔥 رفع الدقة الحسابية
+getcontext().prec = 28
 
 # =====================
-# SEND TELEGRAM
+# FETCH ONCE (SNAPSHOT)
 # =====================
-def send_to_channel(message):
-    url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
-    requests.post(url, data={
-        "chat_id": CHANNEL,
-        "text": message,
-        "parse_mode": "HTML"
-    })
+def fetch_snapshot():
+    url = "https://edahabapp.com/"
+    headers = {"User-Agent": "Mozilla/5.0"}
+    res = requests.get(url, headers=headers, timeout=10)
+    return BeautifulSoup(res.text, "html.parser")
 
 # =====================
-# LOOP
+# SAFE NUMBER PARSER
 # =====================
-def loop():
-    global last_sent
-
-    while True:
-        data = get_all_prices()
-
-        if data and data != last_sent:
-            msg = format_message(data)
-            send_to_channel(msg)
-            last_sent = data
-
-        time.sleep(60)
+def clean_number(text):
+    return Decimal(text.replace(",", "").strip())
 
 # =====================
-# API
+# ENGINE CORE
 # =====================
-@app.route("/api/prices")
-def api():
-    return jsonify(get_all_prices())
+def calculate_precision():
+    soup = fetch_snapshot()
+
+    items = soup.find_all("div", class_="price-item")
+
+    gram_24 = None
+    ounce_usd = None
+
+    for item in items:
+        title = item.find("span", class_="font-medium")
+        numbers = item.find_all("span", class_="number-font")
+
+        if not title or len(numbers) == 0:
+            continue
+
+        name = title.text.strip()
+
+        # ===== GOLD 24 =====
+        if "24" in name and len(numbers) >= 2:
+            # نثبت النص قبل أي تحويل
+            sell_text = numbers[1].text
+            gram_24 = clean_number(sell_text)
+
+        # ===== OUNCE =====
+        if "أوقية" in name:
+            ounce_text = numbers[0].text
+            ounce_usd = clean_number(ounce_text)
+
+    # =====================
+    # PRECISION FORMULA
+    # =====================
+    if gram_24 and ounce_usd:
+        raw = (gram_24 * Decimal("31.103")) / ounce_usd
+
+        # final rounding فقط هنا
+        dollar_sagha = raw.quantize(Decimal("0.01"))
+
+        return {
+            "gram_24": gram_24,
+            "ounce_usd": ounce_usd,
+            "dollar_sagha": float(dollar_sagha)
+        }
+
+    return None
+
 
 # =====================
-# WEB
+# TEST RUN
 # =====================
-@app.route("/")
-def home():
-    return send_file("index.html")
+while True:
+    result = calculate_precision()
 
-# =====================
-# RUN
-# =====================
-if __name__ == "__main__":
-    Thread(target=loop).start()
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+    if result:
+        print("💎 GRAM 24:", result["gram_24"])
+        print("🌍 OUNCE USD:", result["ounce_usd"])
+        print("💵 DOLLAR SAGHA:", result["dollar_sagha"])
+        print("━━━━━━━━━━━━━━")
+
+    time.sleep(60)
