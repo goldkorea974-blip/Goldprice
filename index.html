@@ -16,16 +16,7 @@ body {
     color: white;
 }
 
-h1 {
-    text-align: center;
-    color: gold;
-}
-
-.section-title {
-    margin-top: 25px;
-    color: #fbbf24;
-    border-bottom: 2px solid #fbbf24;
-}
+h1 { text-align: center; color: gold; }
 
 .container {
     display: grid;
@@ -39,10 +30,7 @@ h1 {
     border-radius: 12px;
 }
 
-.card-title {
-    color: #facc15;
-    margin-bottom: 10px;
-}
+.title { color: #facc15; margin-bottom: 10px; }
 
 .sell { color: #22c55e; }
 .buy { color: #ef4444; }
@@ -53,22 +41,15 @@ h1 {
 
 <h1>💰 أسعار الذهب لحظيًا</h1>
 
-<div class="section-title">الذهب</div>
-<div class="container" id="gold"></div>
-
-<div class="section-title">العملات</div>
-<div class="container" id="currency"></div>
+<div class="container" id="container"></div>
 
 <script>
 async function load() {
     const res = await fetch("/api/prices");
     const data = await res.json();
 
-    const gold = document.getElementById("gold");
-    const currency = document.getElementById("currency");
-
-    gold.innerHTML = "";
-    currency.innerHTML = "";
+    const box = document.getElementById("container");
+    box.innerHTML = "";
 
     for (let [k, v] of Object.entries(data)) {
         let card = document.createElement("div");
@@ -76,18 +57,18 @@ async function load() {
 
         if (typeof v === "object") {
             card.innerHTML = `
-                <div class="card-title">${k}</div>
+                <div class="title">${k}</div>
                 <div class="sell">بيع: ${v.بيع}</div>
                 <div class="buy">شراء: ${v.شراء}</div>
             `;
-            gold.appendChild(card);
         } else {
             card.innerHTML = `
-                <div class="card-title">${k}</div>
+                <div class="title">${k}</div>
                 <div>${v}</div>
             `;
-            currency.appendChild(card);
         }
+
+        box.appendChild(card);
     }
 }
 
