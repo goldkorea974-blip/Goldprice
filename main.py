@@ -20,19 +20,16 @@ URL = "https://edahabapp.com/"
 
 getcontext().prec = 28
 
-cache = {"data": None, "time": 0}
-CACHE_TIME = 60
-
 last_sent_value = None
 
 # =====================
-# DECIMAL CLEAN
+# CLEAN DECIMAL
 # =====================
 def D(x):
     return Decimal(x.replace(",", "").strip())
 
 # =====================
-# SCRAPE ENGINE
+# SNAPSHOT ENGINE
 # =====================
 def get_snapshot():
     html = requests.get(URL, headers={"User-Agent": "Mozilla/5.0"}).text
@@ -52,6 +49,9 @@ def get_snapshot():
 
         name = title.text.strip()
 
+        # =====================
+        # GOLD PRICES
+        # =====================
         if "عيار" in name and len(nums) >= 2:
             buy = D(nums[0].text)
             sell = D(nums[1].text)
@@ -64,8 +64,12 @@ def get_snapshot():
             if "24" in name:
                 gram_24 = sell
 
-        if "أوقية" in name:
+        # =====================
+        # OUNCE
+        # =====================
+        if "أوقية" in name or "اونصة" in name or "ounce" in name.lower():
             ounce = D(nums[0].text)
+            data["الأوقية العالمية"] = float(ounce)
 
     # =====================
     # DOLLAR SAGHA
@@ -105,12 +109,12 @@ def format_msg(data):
         else:
             msg += f"📌 {k}: {v}\n"
 
-    msg += "━━━━━━━━━━━━━━\n⚡ Railway Stable Engine"
+    msg += "━━━━━━━━━━━━━━\n⚡ Precision Engine"
 
     return msg
 
 # =====================
-# LOOP (THREAD SAFE)
+# LOOP + VERIFIER
 # =====================
 def loop():
     global last_sent_value
@@ -125,7 +129,7 @@ def loop():
                     diff = abs(dollar - last_sent_value)
 
                     if diff > Decimal("0.01"):
-                        print("⚠️ Difference:", diff)
+                        print("⚠️ Difference detected:", diff)
 
                 if dollar != last_sent_value:
                     send(format_msg(data))
@@ -137,11 +141,11 @@ def loop():
         time.sleep(60)
 
 # =====================
-# API ROUTE
+# API
 # =====================
 @app.route("/")
 def home():
-    return "Bot is running ✅"
+    return "💎 Gold Bot Running ✅"
 
 @app.route("/api")
 def api():
@@ -149,7 +153,7 @@ def api():
     return jsonify(data)
 
 # =====================
-# START THREAD + FLASK
+# START
 # =====================
 if __name__ == "__main__":
     Thread(target=loop, daemon=True).start()
