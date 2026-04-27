@@ -20,7 +20,6 @@ CHANNEL = "@AndriaGold"
 cache = {"data": None, "time": 0}
 CACHE_TIME = 60
 
-# آخر رسالة اتبعتت (عشان نعرف التغيير)
 last_sent = None
 
 # =====================
@@ -42,6 +41,9 @@ def get_all_prices():
         prices = {}
         items = soup.find_all("div", class_="price-item")
 
+        gram_24 = None
+        ounce_usd = None
+
         for item in items:
             title = item.find("span", class_="font-medium")
             numbers = item.find_all("span", class_="number-font")
@@ -51,14 +53,34 @@ def get_all_prices():
 
             name = title.text.strip()
 
+            # ===== أسعار الذهب =====
             if "عيار" in name or "ذهب" in name:
                 if len(numbers) >= 2:
-                    prices[name] = {
-                        "بيع": numbers[0].text.strip(),
-                        "شراء": numbers[1].text.strip()
-                    }
+                    buy = float(numbers[0].text.replace(",", ""))
+                    sell = float(numbers[1].text.replace(",", ""))
+
+                    prices[name] = {"بيع": buy, "شراء": sell}
+
+                    if "24" in name:
+                        gram_24 = sell  # نستخدم البيع
+
+            # ===== الأوقية بالدولار =====
+            if "أوقية" in name or "ounce" in name.lower():
+                try:
+                    ounce_usd = float(numbers[0].text.replace(",", ""))
+                except:
+                    pass
+
             else:
                 prices[name] = numbers[0].text.strip()
+
+        # =====================
+        # حساب دولار الصاغة (المعادلة اللي انت عايزها)
+        # =====================
+        dollar_sagha = None
+        if gram_24 and ounce_usd:
+            dollar_sagha = gram_24 / (31.103 * ounce_usd)
+            prices["دولار الصاغة"] = round(dollar_sagha, 3)
 
         cache = {"data": prices, "time": time.time()}
         return prices
@@ -88,12 +110,12 @@ def format_message(data):
             msg += f"🔸 {k}\n"
             msg += f"بيع: {v['بيع']} | شراء: {v['شراء']}\n\n"
         else:
-            msg += f"{k}: {v}\n"
+            msg += f"📊 {k}: {v}\n"
 
     return msg
 
 # =====================
-# AUTO UPDATE (ONLY IF CHANGED)
+# AUTO UPDATE
 # =====================
 def loop():
     global last_sent
@@ -106,7 +128,7 @@ def loop():
             send_to_channel(msg)
             last_sent = data
 
-        time.sleep(60)  # check كل دقيقة
+        time.sleep(60)
 
 # =====================
 # API
