@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>أسعار الذهب والعملات</title>
+<title>أسعار الذهب</title>
 
 <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700&display=swap" rel="stylesheet">
 
@@ -19,64 +19,39 @@ body {
 h1 {
     text-align: center;
     color: gold;
-    margin-bottom: 30px;
 }
 
 .section-title {
-    margin-top: 30px;
-    font-size: 22px;
+    margin-top: 25px;
     color: #fbbf24;
     border-bottom: 2px solid #fbbf24;
-    padding-bottom: 5px;
 }
 
 .container {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
     gap: 15px;
-    margin-top: 20px;
 }
 
 .card {
     background: #1f2937;
     padding: 20px;
-    border-radius: 15px;
-    box-shadow: 0 4px 15px rgba(0,0,0,0.4);
-    transition: 0.3s;
-}
-
-.card:hover {
-    transform: translateY(-5px);
-    box-shadow: 0 8px 25px rgba(255,215,0,0.4);
+    border-radius: 12px;
 }
 
 .card-title {
-    font-weight: bold;
-    margin-bottom: 10px;
     color: #facc15;
-    font-size: 18px;
-}
-
-.price {
-    font-size: 20px;
+    margin-bottom: 10px;
 }
 
 .sell { color: #22c55e; }
 .buy { color: #ef4444; }
-
-.footer {
-    text-align: center;
-    margin-top: 40px;
-    font-size: 14px;
-    opacity: 0.8;
-    color: #fbbf24;
-}
 </style>
 </head>
 
 <body>
 
-<h1>أسعار الذهب لحظيًا مع اندريا</h1>
+<h1>💰 أسعار الذهب لحظيًا</h1>
 
 <div class="section-title">الذهب</div>
 <div class="container" id="gold"></div>
@@ -84,102 +59,40 @@ h1 {
 <div class="section-title">العملات</div>
 <div class="container" id="currency"></div>
 
-<!-- FIX: عنصر مفقود كان مسبب مشكلة -->
-<div id="price" style="display:none;"></div>
-
-<div class="footer">
-    Web Developer by TomasAtef
-</div>
-
 <script>
+async function load() {
+    const res = await fetch("/api/prices");
+    const data = await res.json();
 
-const url = "https://edahabapp.com/";
-let loading = false;
+    const gold = document.getElementById("gold");
+    const currency = document.getElementById("currency");
 
-async function getGoldPrice() {
-    if (loading) return;
-    loading = true;
+    gold.innerHTML = "";
+    currency.innerHTML = "";
 
-    try {
-        const res = await fetch(
-            "https://api.allorigins.win/get?url=" + encodeURIComponent(url)
-        );
+    for (let [k, v] of Object.entries(data)) {
+        let card = document.createElement("div");
+        card.className = "card";
 
-        const data = await res.json();
-
-        const doc = new DOMParser().parseFromString(data.contents, "text/html");
-
-        let price =
-            [...doc.querySelectorAll("*")]
-                .find(el => el.innerText && el.innerText.includes("EGP"))
-                ?.innerText;
-
-        if (!price) {
-            price =
-                [...doc.querySelectorAll("*")]
-                    .find(el => /\d/.test(el.innerText))
-                    ?.innerText;
+        if (typeof v === "object") {
+            card.innerHTML = `
+                <div class="card-title">${k}</div>
+                <div class="sell">بيع: ${v.بيع}</div>
+                <div class="buy">شراء: ${v.شراء}</div>
+            `;
+            gold.appendChild(card);
+        } else {
+            card.innerHTML = `
+                <div class="card-title">${k}</div>
+                <div>${v}</div>
+            `;
+            currency.appendChild(card);
         }
-
-        document.getElementById("price").innerText =
-            price || "مش قادر أجيب السعر";
-
-    } catch (e) {
-        console.log(e);
-        document.getElementById("price").innerText = "خطأ في الجلب";
-    }
-
-    loading = false;
-}
-
-// تشغيل أول مرة
-getGoldPrice();
-setInterval(getGoldPrice, 30000);
-
-
-async function fetchPrices() {
-    try {
-        const res = await fetch('/api/prices');
-        const data = await res.json();
-
-        const goldContainer = document.getElementById('gold');
-        const currencyContainer = document.getElementById('currency');
-
-        goldContainer.innerHTML = '';
-        currencyContainer.innerHTML = '';
-
-        for (const [key, value] of Object.entries(data)) {
-            const card = document.createElement('div');
-            card.className = 'card';
-
-            if (typeof value === 'object') {
-                card.innerHTML = `
-                    <div class="card-title">${key}</div>
-                    <div class="price sell">بيع: ${value.بيع} جنيه</div>
-                    <div class="price buy">شراء: ${value.شراء} جنيه</div>
-                `;
-                goldContainer.appendChild(card);
-            } else {
-                card.innerHTML = `
-                    <div class="card-title">${key}</div>
-                    <div class="price">${value} جنيه</div>
-                `;
-                currencyContainer.appendChild(card);
-            }
-        }
-
-    } catch (err) {
-        console.error("خطأ في جلب البيانات", err);
     }
 }
 
-fetchPrices();
-setInterval(fetchPrices, 60000);
-
-</script>
-
-</body>
-</html>
+load();
+setInterval(load, 60000);
 </script>
 
 </body>
