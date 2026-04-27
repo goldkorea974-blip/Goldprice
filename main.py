@@ -14,9 +14,6 @@ app.config['JSON_AS_ASCII'] = False
 TOKEN = "8165343576:AAGr_uWTBUMGCgcdahiCicHN3DehLaBOUf0"
 CHANNEL = "@AndriaGold"
 
-# =====================
-# CACHE
-# =====================
 cache = {"data": None, "time": 0}
 CACHE_TIME = 60
 
@@ -54,39 +51,59 @@ def get_all_prices():
             name = title.text.strip()
 
             # ===== أسعار الذهب =====
-            if "عيار" in name or "ذهب" in name:
+            if "عيار" in name:
                 if len(numbers) >= 2:
                     buy = float(numbers[0].text.replace(",", ""))
                     sell = float(numbers[1].text.replace(",", ""))
 
-                    prices[name] = {"بيع": buy, "شراء": sell}
+                    prices[name] = {"بيع": buy, "شراء": buy}
 
                     if "24" in name:
-                        gram_24 = sell  # نستخدم البيع
+                        gram_24 = sell
 
-            # ===== الأوقية بالدولار =====
-            if "أوقية" in name or "ounce" in name.lower():
+            # ===== الأوقية =====
+            if "أوقية" in name:
                 try:
                     ounce_usd = float(numbers[0].text.replace(",", ""))
+                    prices["الأوقية العالمية"] = ounce_usd
                 except:
                     pass
 
-            else:
-                prices[name] = numbers[0].text.strip()
-
         # =====================
-        # حساب دولار الصاغة (المعادلة اللي انت عايزها)
+        # دولار الصاغة
         # =====================
         dollar_sagha = None
         if gram_24 and ounce_usd:
-            dollar_sagha = gram_24 / (31.103 * ounce_usd)
-            prices["دولار الصاغة"] = round(dollar_sagha, 3)
+            dollar_sagha = (gram_24 * 31.103) / ounce_usd
+            prices["دولار الصاغة"] = round(dollar_sagha, 2)
 
         cache = {"data": prices, "time": time.time()}
         return prices
 
     except Exception as e:
         return {"error": str(e)}
+
+# =====================
+# TELEGRAM MESSAGE (TABLE)
+# =====================
+def format_message(data):
+    msg = "💎 <b>تحديث أسعار الذهب</b>\n\n"
+
+    msg += "📊 <b>جدول الأسعار</b>\n"
+    msg += "━━━━━━━━━━━━━━\n"
+
+    for k, v in data.items():
+        if isinstance(v, dict):
+            msg += f"🔸 {k}\n"
+            msg += f"بيع: {v['بيع']} | شراء: {v['شراء']}\n"
+            msg += "──────────────\n"
+        else:
+            msg += f"📌 {k}: {v}\n"
+
+    msg += "━━━━━━━━━━━━━━\n"
+    msg += "⚡ تم التحديث تلقائيًا"
+
+    return msg
 
 # =====================
 # TELEGRAM SEND
@@ -100,22 +117,7 @@ def send_to_channel(message):
     })
 
 # =====================
-# FORMAT MESSAGE
-# =====================
-def format_message(data):
-    msg = "💰 <b>تحديث أسعار الذهب</b>\n\n"
-
-    for k, v in data.items():
-        if isinstance(v, dict):
-            msg += f"🔸 {k}\n"
-            msg += f"بيع: {v['بيع']} | شراء: {v['شراء']}\n\n"
-        else:
-            msg += f"📊 {k}: {v}\n"
-
-    return msg
-
-# =====================
-# AUTO UPDATE
+# AUTO LOOP
 # =====================
 def loop():
     global last_sent
@@ -138,11 +140,43 @@ def api():
     return jsonify(get_all_prices())
 
 # =====================
-# WEB
+# WEB PAGE (TABLE VIEW)
 # =====================
 @app.route("/")
 def home():
-    return send_file("index.html")
+    data = get_all_prices()
+
+    html = """
+    <html>
+    <head>
+        <title>Gold Prices</title>
+        <style>
+            body { font-family: Arial; background:#111; color:#fff; text-align:center; }
+            table { margin:auto; border-collapse: collapse; width:80%; }
+            th, td { border:1px solid #444; padding:10px; }
+            th { background:#222; }
+            tr:nth-child(even){background:#1a1a1a;}
+        </style>
+    </head>
+    <body>
+        <h2>💎 أسعار الذهب</h2>
+        <table>
+            <tr><th>النوع</th><th>القيمة</th></tr>
+    """
+
+    for k, v in data.items():
+        if isinstance(v, dict):
+            html += f"<tr><td>{k}</td><td>بيع: {v['بيع']} | شراء: {v['شراء']}</td></tr>"
+        else:
+            html += f"<tr><td>{k}</td><td>{v}</td></tr>"
+
+    html += """
+        </table>
+    </body>
+    </html>
+    """
+
+    return html
 
 # =====================
 # RUN
