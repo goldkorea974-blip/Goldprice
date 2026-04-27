@@ -49,7 +49,9 @@ def get_snapshot():
 
         name = title.text.strip()
 
-        # GOLD
+        # =====================
+        # GOLD PRICES
+        # =====================
         if "عيار" in name and len(nums) >= 2:
             buy = D(nums[0].text)
             sell = D(nums[1].text)
@@ -59,10 +61,13 @@ def get_snapshot():
                 "sell": str(sell)
             }
 
+            # ✅ استخدام سعر الشراء فقط
             if "24" in name:
-                gram_24 = sell  # مهم: نستخدم Decimal
+                gram_24 = buy
 
+        # =====================
         # OUNCE
+        # =====================
         if "أوقية" in name or "اونصة" in name or "ounce" in name.lower():
             ounce = D(nums[0].text)
             data["الأوقية العالمية"] = str(ounce)
@@ -74,9 +79,9 @@ def get_snapshot():
 
     if gram_24 and ounce:
         raw = (gram_24 * Decimal("31.1034768")) / ounce
-        dollar = raw  # بدون تقريب
+        dollar = raw
 
-        # للعرض فقط
+        # عرض فقط برقمين
         data["دولار الصاغة"] = str(round(dollar, 2))
 
     return data, dollar
@@ -108,7 +113,6 @@ def format_msg(data):
             msg += f"📌 {k}: {v}\n"
 
     msg += "━━━━━━━━━━━━━━\n⚡ Precision Engine"
-
     return msg
 
 # =====================
@@ -127,7 +131,7 @@ def loop():
                     diff = abs(dollar - last_sent_value)
 
                     if diff > Decimal("0.05"):
-                        print("⚠️ فرق كبير:", diff)
+                        print("⚠️ فرق:", diff)
 
                 if dollar != last_sent_value:
                     send(format_msg(data))
