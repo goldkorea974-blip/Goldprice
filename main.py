@@ -1,7 +1,15 @@
+import os
+import time
 import requests
 from bs4 import BeautifulSoup
 from decimal import Decimal, getcontext
-import time
+from flask import Flask, jsonify
+from threading import Thread
+
+# =====================
+# FLASK APP
+# =====================
+app = Flask(__name__)
 
 # =====================
 # CONFIG
@@ -12,16 +20,19 @@ URL = "https://edahabapp.com/"
 
 getcontext().prec = 28
 
+cache = {"data": None, "time": 0}
+CACHE_TIME = 60
+
 last_sent_value = None
 
 # =====================
-# CLEAN DECIMAL
+# DECIMAL CLEAN
 # =====================
 def D(x):
     return Decimal(x.replace(",", "").strip())
 
 # =====================
-# SNAPSHOT ENGINE
+# SCRAPE ENGINE
 # =====================
 def get_snapshot():
     html = requests.get(URL, headers={"User-Agent": "Mozilla/5.0"}).text
@@ -41,32 +52,30 @@ def get_snapshot():
 
         name = title.text.strip()
 
-        # ===== GOLD PRICES =====
         if "عيار" in name and len(nums) >= 2:
             buy = D(nums[0].text)
             sell = D(nums[1].text)
 
             data[name] = {
-                "buy": buy,
-                "sell": sell
+                "buy": float(buy),
+                "sell": float(sell)
             }
 
             if "24" in name:
                 gram_24 = sell
 
-        # ===== OUNCE =====
         if "أوقية" in name:
             ounce = D(nums[0].text)
 
     # =====================
-    # DOLLAR SAGHA (PRECISION)
+    # DOLLAR SAGHA
     # =====================
     dollar = None
 
     if gram_24 and ounce:
         raw = (gram_24 * Decimal("31.103")) / ounce
         dollar = raw.quantize(Decimal("0.01"))
-        data["دولار الصاغة"] = dollar
+        data["دولار الصاغة"] = float(dollar)
 
     return data, dollar
 
@@ -96,36 +105,54 @@ def format_msg(data):
         else:
             msg += f"📌 {k}: {v}\n"
 
-    msg += "━━━━━━━━━━━━━━\n⚡ Precision Engine"
+    msg += "━━━━━━━━━━━━━━\n⚡ Railway Stable Engine"
 
     return msg
 
 # =====================
-# LOOP + VERIFIER
+# LOOP (THREAD SAFE)
 # =====================
-while True:
-    try:
-        data, dollar = get_snapshot()
+def loop():
+    global last_sent_value
 
-        # =====================
-        # VERIFICATION
-        # =====================
-        if dollar is not None:
+    while True:
+        try:
+            data, dollar = get_snapshot()
 
-            if last_sent_value is not None:
-                diff = abs(dollar - last_sent_value)
+            if dollar is not None:
 
-                if diff > Decimal("0.01"):
-                    print("⚠️ Difference detected:", diff)
+                if last_sent_value is not None:
+                    diff = abs(dollar - last_sent_value)
 
-            # =====================
-            # SEND ONLY IF CHANGED
-            # =====================
-            if dollar != last_sent_value:
-                send(format_msg(data))
-                last_sent_value = dollar
+                    if diff > Decimal("0.01"):
+                        print("⚠️ Difference:", diff)
 
-    except Exception as e:
-        print("Error:", e)
+                if dollar != last_sent_value:
+                    send(format_msg(data))
+                    last_sent_value = dollar
 
-    time.sleep(60)
+        except Exception as e:
+            print("Error:", e)
+
+        time.sleep(60)
+
+# =====================
+# API ROUTE
+# =====================
+@app.route("/")
+def home():
+    return "Bot is running ✅"
+
+@app.route("/api")
+def api():
+    data, _ = get_snapshot()
+    return jsonify(data)
+
+# =====================
+# START THREAD + FLASK
+# =====================
+if __name__ == "__main__":
+    Thread(target=loop, daemon=True).start()
+
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
