@@ -81,7 +81,6 @@ def get_snapshot():
         raw = (gram_24 * Decimal("31.1034768")) / ounce
         dollar = raw
 
-        # عرض فقط برقمين
         data["دولار الصاغة"] = str(round(dollar, 2))
 
     return data, dollar
@@ -112,7 +111,9 @@ def format_msg(data):
         else:
             msg += f"📌 {k}: {v}\n"
 
-    msg += "━━━━━━━━━━━━━━\n⚡ Precision Engine"
+    # ✅ رابط موقعك بدل Precision Engine
+    msg += '━━━━━━━━━━━━━━\n🌐 <a href="https://andriagold.netlify.app/">افتح الموقع</a>'
+
     return msg
 
 # =====================
