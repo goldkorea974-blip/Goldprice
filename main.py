@@ -15,7 +15,7 @@ getcontext().prec = 28
 last_sent_value = None
 
 # =====================
-# DECIMAL CLEAN
+# CLEAN DECIMAL
 # =====================
 def D(x):
     return Decimal(x.replace(",", "").strip())
@@ -59,7 +59,7 @@ def get_snapshot():
             ounce = D(nums[0].text)
 
     # =====================
-    # CALCULATION (EXACT)
+    # DOLLAR SAGHA (PRECISION)
     # =====================
     dollar = None
 
@@ -107,12 +107,11 @@ while True:
     try:
         data, dollar = get_snapshot()
 
+        # =====================
+        # VERIFICATION
+        # =====================
         if dollar is not None:
-            global last_sent_value
 
-            # =====================
-            # VERIFICATION (0.01 check)
-            # =====================
             if last_sent_value is not None:
                 diff = abs(dollar - last_sent_value)
 
