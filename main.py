@@ -11,7 +11,7 @@ app.config['JSON_AS_ASCII'] = False
 # =====================
 # CONFIG
 # =====================
-TOKEN = "PUT_YOUR_TOKEN"
+TOKEN = "8165343576:AAGr_uWTBUMGCgcdahiCicHN3DehLaBOUf0"
 CHANNEL = "@AndriaGold"
 
 CACHE_TIME = 60
