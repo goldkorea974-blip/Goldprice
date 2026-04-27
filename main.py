@@ -45,7 +45,7 @@ def get_all_prices():
             title = item.find("span", class_="font-medium")
             numbers = item.find_all("span", class_="number-font")
 
-            if not title or not numbers:
+            if not title or len(numbers) == 0:
                 continue
 
             name = title.text.strip()
@@ -56,7 +56,10 @@ def get_all_prices():
                     buy = float(numbers[0].text.replace(",", ""))
                     sell = float(numbers[1].text.replace(",", ""))
 
-                    prices[name] = {"بيع": buy, "شراء": buy}
+                    prices[name] = {
+                        "بيع": sell,
+                        "شراء": buy
+                    }
 
                     if "24" in name:
                         gram_24 = sell
@@ -84,13 +87,26 @@ def get_all_prices():
         return {"error": str(e)}
 
 # =====================
-# TELEGRAM MESSAGE (TABLE)
+# TELEGRAM FORMAT (PRO)
 # =====================
 def format_message(data):
-    msg = "💎 <b>تحديث أسعار الذهب</b>\n\n"
+    global last_sent
 
-    msg += "📊 <b>جدول الأسعار</b>\n"
+    msg = "💎 <b>تحديث أسعار الذهب</b>\n\n"
+    msg += "📊 <b>الأسعار الحالية</b>\n"
     msg += "━━━━━━━━━━━━━━\n"
+
+    trend = ""
+
+    if last_sent and "دولار الصاغة" in data and "دولار الصاغة" in last_sent:
+        diff = data["دولار الصاغة"] - last_sent["دولار الصاغة"]
+
+        if diff > 0:
+            trend = f"\n📈 دولار الصاغة زاد +{round(diff,2)}"
+        elif diff < 0:
+            trend = f"\n📉 دولار الصاغة قل {round(diff,2)}"
+        else:
+            trend = "\n⚖️ بدون تغيير"
 
     for k, v in data.items():
         if isinstance(v, dict):
@@ -100,13 +116,14 @@ def format_message(data):
         else:
             msg += f"📌 {k}: {v}\n"
 
-    msg += "━━━━━━━━━━━━━━\n"
-    msg += "⚡ تم التحديث تلقائيًا"
+    msg += "━━━━━━━━━━━━━━"
+    msg += trend
+    msg += "\n⚡ تحديث تلقائي"
 
     return msg
 
 # =====================
-# TELEGRAM SEND
+# SEND TO TELEGRAM
 # =====================
 def send_to_channel(message):
     url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
@@ -117,7 +134,7 @@ def send_to_channel(message):
     })
 
 # =====================
-# AUTO LOOP
+# LOOP
 # =====================
 def loop():
     global last_sent
@@ -140,43 +157,11 @@ def api():
     return jsonify(get_all_prices())
 
 # =====================
-# WEB PAGE (TABLE VIEW)
+# WEB
 # =====================
 @app.route("/")
 def home():
-    data = get_all_prices()
-
-    html = """
-    <html>
-    <head>
-        <title>Gold Prices</title>
-        <style>
-            body { font-family: Arial; background:#111; color:#fff; text-align:center; }
-            table { margin:auto; border-collapse: collapse; width:80%; }
-            th, td { border:1px solid #444; padding:10px; }
-            th { background:#222; }
-            tr:nth-child(even){background:#1a1a1a;}
-        </style>
-    </head>
-    <body>
-        <h2>💎 أسعار الذهب</h2>
-        <table>
-            <tr><th>النوع</th><th>القيمة</th></tr>
-    """
-
-    for k, v in data.items():
-        if isinstance(v, dict):
-            html += f"<tr><td>{k}</td><td>بيع: {v['بيع']} | شراء: {v['شراء']}</td></tr>"
-        else:
-            html += f"<tr><td>{k}</td><td>{v}</td></tr>"
-
-    html += """
-        </table>
-    </body>
-    </html>
-    """
-
-    return html
+    return send_file("index.html")
 
 # =====================
 # RUN
