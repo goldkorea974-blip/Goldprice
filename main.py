@@ -113,6 +113,7 @@ def format_msg(data):
 
     # ✅ رابط موقعك بدل Precision Engine
     msg += '━━━━━━━━━━━━━━\n🌐 <a href="https://andriagold.netlify.app/">افتح الموقع</a>'
+    msg += '━━━━━━━━━━━━━━\n🌐 <a href="https://t.me/AndreaGold">تعالا شوف شغلنا</a>'
 
     return msg
 
