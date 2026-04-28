@@ -111,13 +111,12 @@ def format_msg(data):
         else:
             msg += f"📌 {k}: {v}\n"
 
-    # ✅ رابط موقعك بدل Precision Engine
     msg += "━━━━━━━━━━━━━━\n"
-msg += '🌐 <a href="https://andriagold.netlify.app/">افتح الموقع</a>\n'
-msg += "━━━━━━━━━━━━━━\n"
-msg += '📢 <a href="https://t.me/AndreaGold">تعالا شوف شغلنا</a>\n'
-    return msg
+    msg += '🌐 <a href="https://andriagold.netlify.app/">افتح الموقع</a>\n'
+    msg += "━━━━━━━━━━━━━━\n"
+    msg += '📢 <a href="https://t.me/AndreaGold">تعالا شوف شغلنا</a>\n'
 
+    return msg
 # =====================
 # LOOP
 # =====================
