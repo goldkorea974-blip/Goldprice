@@ -24,6 +24,13 @@ getcontext().prec = 28
 last_sent_value = None
 end_sent = False
 start_sent = False
+
+# =====================
+# LOGGING
+# =====================
+def log(msg):
+    print(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}")
+
 # =====================
 # CLEAN DECIMAL
 # =====================
@@ -31,63 +38,83 @@ def D(x):
     return Decimal(x.replace(",", "").strip())
 
 # =====================
-# SNAPSHOT ENGINE
+# SNAPSHOT ENGINE (WITH RETRY)
 # =====================
-def get_snapshot():
-    html = requests.get(URL, headers={"User-Agent": "Mozilla/5.0"}).text
-    soup = BeautifulSoup(html, "html.parser")
-    items = soup.find_all("div", class_="price-item")
+def get_snapshot(retries=3):
+    for attempt in range(retries):
+        try:
+            log(f"Fetching data (attempt {attempt+1})")
 
-    data = {}
-    gram_24 = None
-    ounce = None
+            html = requests.get(
+                URL,
+                headers={"User-Agent": "Mozilla/5.0"},
+                timeout=10
+            ).text
 
-    for item in items:
-        title = item.find("span", class_="font-medium")
-        nums = item.find_all("span", class_="number-font")
+            soup = BeautifulSoup(html, "html.parser")
+            items = soup.find_all("div", class_="price-item")
 
-        if not title or len(nums) == 0:
-            continue
+            data = {}
+            gram_24 = None
+            ounce = None
 
-        name = title.text.strip()
+            for item in items:
+                title = item.find("span", class_="font-medium")
+                nums = item.find_all("span", class_="number-font")
 
-        # GOLD
-        if "عيار" in name and len(nums) >= 2:
-            buy = D(nums[0].text)
-            sell = D(nums[1].text)
+                if not title or len(nums) == 0:
+                    continue
 
-            data[name] = {
-                "buy": str(buy),
-                "sell": str(sell)
-            }
+                name = title.text.strip()
 
-            if "24" in name:
-                gram_24 = buy
+                # GOLD
+                if "عيار" in name and len(nums) >= 2:
+                    buy = D(nums[0].text)
+                    sell = D(nums[1].text)
 
-        # OUNCE
-        if "أوقية" in name or "اونصة" in name or "ounce" in name.lower():
-            ounce = D(nums[0].text)
-            data["الأوقية العالمية"] = str(ounce)
+                    data[name] = {
+                        "buy": str(buy),
+                        "sell": str(sell)
+                    }
 
-    # DOLLAR SAGHA
-    dollar = None
-    if gram_24 and ounce:
-        raw = (gram_24 * Decimal("31.1034768")) / ounce
-        dollar = raw
-        data["دولار الصاغة"] = str(round(dollar, 2))
+                    if "24" in name:
+                        gram_24 = buy
 
-    return data, dollar
+                # OUNCE
+                if "أوقية" in name or "اونصة" in name or "ounce" in name.lower():
+                    ounce = D(nums[0].text)
+                    data["الأوقية العالمية"] = str(ounce)
+
+            dollar = None
+            if gram_24 and ounce:
+                raw = (gram_24 * Decimal("31.1034768")) / ounce
+                dollar = raw
+                data["دولار الصاغة"] = str(round(dollar, 2))
+
+            log("Snapshot success")
+            return data, dollar
+
+        except Exception as e:
+            log(f"Snapshot error: {e}")
+            time.sleep(2)
+
+    log("Snapshot FAILED after retries ❌")
+    return {}, None
 
 # =====================
 # TELEGRAM SEND
 # =====================
 def send(msg):
-    url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
-    requests.post(url, data={
-        "chat_id": CHANNEL,
-        "text": msg,
-        "parse_mode": "HTML"
-    })
+    try:
+        url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
+        requests.post(url, data={
+            "chat_id": CHANNEL,
+            "text": msg,
+            "parse_mode": "HTML"
+        })
+        log("Message sent ✔️")
+    except Exception as e:
+        log(f"Send error: {e}")
 
 # =====================
 # FORMAT LIVE MESSAGE
@@ -140,16 +167,24 @@ def loop():
             now = datetime.now()
             hour = now.hour
 
-            # 🟢 بداية اليوم
+            log(f"Loop tick | hour={hour} start_sent={start_sent}")
+
+            # 🟢 START (10 AM)
             if 10 <= hour <= 23:
 
                 if hour >= 10 and not start_sent:
+                    log("🚀 Sending START message")
+
                     data, dollar = get_snapshot()
-                    send(format_msg(data))
-                    last_sent_value = dollar
-                    start_sent = True
-                    end_sent = False
-                    print("🟢 بداية اليوم")
+
+                    if data:
+                        send(format_msg(data))
+                        last_sent_value = dollar
+                        start_sent = True
+                        end_sent = False
+                        log("🟢 START sent")
+                    else:
+                        log("❌ START skipped (no data)")
 
                 else:
                     data, dollar = get_snapshot()
@@ -160,24 +195,30 @@ def loop():
                             diff = abs(dollar - last_sent_value)
 
                             if diff > Decimal("0.05"):
-                                print("⚠️ فرق:", diff)
+                                log(f"⚠️ Change detected: {diff}")
 
                         if dollar != last_sent_value:
                             send(format_msg(data))
                             last_sent_value = dollar
+                            log("📤 Update sent")
 
-            # 🌙 نهاية اليوم
+            # 🌙 END (12 AM)
             elif hour == 0 and not end_sent:
+                log("📉 Sending END message")
+
                 data, _ = get_snapshot()
                 send(format_end_msg(data))
+
                 end_sent = True
                 start_sent = False
-                print("📉 تم إرسال إغلاق اليوم")
+
+                log("📉 END sent")
 
         except Exception as e:
-            print("Error:", e)
+            log(f"Loop error: {e}")
 
         time.sleep(60)
+
 # =====================
 # API
 # =====================
