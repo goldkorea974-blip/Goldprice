@@ -33,6 +33,7 @@ egypt_tz = pytz.timezone("Africa/Cairo")
 # STATE
 # =====================
 last_hash = None
+last_sent_time = 0
 
 # =====================
 # LOG
@@ -41,7 +42,7 @@ def log(msg):
     print(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}")
 
 # =====================
-# CLEAN DECIMAL
+# CLEAN NUMBER
 # =====================
 def D(x):
     return Decimal(x.replace(",", "").strip())
@@ -50,7 +51,7 @@ def D(x):
 # SNAPSHOT
 # =====================
 def get_snapshot(retries=3):
-    for attempt in range(retries):
+    for _ in range(retries):
         try:
             html = requests.get(
                 URL,
@@ -65,7 +66,7 @@ def get_snapshot(retries=3):
 
             gram_24 = None
             ounce = None
-            market_dollar = None
+            usd = None
 
             for item in items:
                 title = item.find("span", class_="font-medium")
@@ -76,55 +77,86 @@ def get_snapshot(retries=3):
 
                 name = title.text.strip()
 
-                # =====================
-                # الذهب
-                # =====================
+                # ================= GOLD =================
                 if "عيار" in name and len(nums) >= 2:
                     sell = D(nums[0].text)
                     buy = D(nums[1].text)
 
                     data[name] = {
-                        "buy": str(buy),
-                        "sell": str(sell)
+                        "buy": float(buy),
+                        "sell": float(sell)
                     }
 
                     if "24" in name:
                         gram_24 = sell
 
-                # =====================
-                # الأوقية
-                # =====================
-                if "أوقية" in name or "اونصة" in name or "ounce" in name.lower():
+                # ================= OUNCE =================
+                if "أوقية" in name or "ounce" in name.lower():
                     ounce = D(nums[0].text)
-                    data["الأوقية العالمية"] = str(ounce)
+                    data["الأوقية العالمية"] = float(ounce)
 
-                # =====================
-                # الدولار الأمريكي (من الموقع)
-                # =====================
-                if "الدولار الأمريكي" in name or "USD" in name:
-                    market_dollar = D(nums[0].text)
-                    data["الدولار الأمريكي"] = str(market_dollar)
+                # ================= USD =================
+                if "الدولار" in name:
+                    usd = D(nums[0].text)
+                    data["الدولار الأمريكي"] = float(usd)
 
-            # =====================
-            # دولار الصاغة
-            # =====================
-            gold_dollar = None
+            # ================= GOLD DOLLAR =================
             if gram_24 and ounce:
-                gold_dollar = (gram_24 * Decimal("31.1034768")) / ounce
-                data["دولار الصاغة"] = f"{gold_dollar:.2f}"
+                gold_usd = (gram_24 * Decimal("31.1034768")) / ounce
+                data["دولار الصاغة"] = float(round(gold_usd, 2))
 
-            # =====================
-            # HASH للتغيير
-            # =====================
-            page_hash = hashlib.md5(str(data).encode()).hexdigest()
-
-            return data, market_dollar, gold_dollar, page_hash
+            return data
 
         except Exception as e:
             log(f"Error: {e}")
             time.sleep(2)
 
-    return {}, None, None, None
+    return {}
+
+# =====================
+# SMART CORRECTION ENGINE
+# =====================
+karat_map = {
+    "24": 24,
+    "21": 21,
+    "18": 18,
+    "14": 14
+}
+
+def correct_prices(data):
+    corrected = data.copy()
+
+    gold_items = {k: v for k, v in data.items() if "عيار" in k}
+
+    for k in gold_items:
+        try:
+            current = gold_items[k]["sell"]
+            k_num = karat_map[k.split()[1]]
+
+            estimates = []
+
+            for k2 in gold_items:
+                if k2 == k:
+                    continue
+
+                k2_num = karat_map[k2.split()[1]]
+                est = gold_items[k2]["sell"] * (k_num / k2_num)
+                estimates.append(est)
+
+            if not estimates:
+                continue
+
+            estimated = sum(estimates) / len(estimates)
+
+            # سماحية الخطأ
+            if abs(current - estimated) > 10:
+                corrected[k]["sell"] = round(float(estimated), 2)
+                corrected[k]["buy"] = round(float(estimated - 40), 2)
+
+        except:
+            continue
+
+    return corrected
 
 # =====================
 # TELEGRAM SEND
@@ -167,29 +199,34 @@ def format_msg(data):
     return msg
 
 # =====================
-# LOOP (LIVE SYSTEM)
+# LOOP
 # =====================
 def loop():
-    global last_hash
+    global last_hash, last_sent_time
 
     while True:
         try:
-            data, market_dollar, gold_dollar, page_hash = get_snapshot()
-
+            data = get_snapshot()
             if not data:
                 continue
 
-            # أول تشغيل
+            # تصحيح الأسعار
+            data = correct_prices(data)
+
+            page_hash = hashlib.md5(json.dumps(data, sort_keys=True).encode()).hexdigest()
+            now = time.time()
+
             if last_hash is None:
                 send(format_msg(data))
                 last_hash = page_hash
+                last_sent_time = now
                 time.sleep(10)
                 continue
 
-            # أي تغيير
-            if page_hash != last_hash:
+            if page_hash != last_hash and (now - last_sent_time) > 5:
                 send(format_msg(data))
                 last_hash = page_hash
+                last_sent_time = now
 
             time.sleep(10)
 
@@ -202,12 +239,11 @@ def loop():
 # =====================
 @app.route("/")
 def home():
-    return "💎 Live Gold System Running"
+    return "💎 Smart Gold System Running"
 
 @app.route("/api")
 def api():
-    data, _, _, _ = get_snapshot()
-    return jsonify(data)
+    return jsonify(get_snapshot())
 
 # =====================
 # START
