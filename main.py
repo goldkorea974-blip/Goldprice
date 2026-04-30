@@ -69,26 +69,26 @@ def get_snapshot(retries=3):
             ounce = None
 
             for item in items:
-                title = item.find("span", class_="font-medium")
-                nums = item.find_all("span", class_="number-font")
+    title = item.find("span", class_="font-medium")
+    nums = item.find_all("span", class_="number-font")
 
-                if not title or len(nums) == 0:
-                    continue
+    if not title or len(nums) == 0:
+        continue
 
-                name = title.text.strip()
+    name = title.text.strip()
 
-                if "عيار" in name and len(nums) >= 2:
-                    buy = D(nums[0].text)
-                    sell = D(nums[1].text)
+    if "عيار" in name and len(nums) >= 2:
+        sell = D(nums[0].text)  # بيع (أعلى)
+        buy = D(nums[1].text)   # شراء (أقل)
 
-                    data[name] = {"buy": str(buy), "sell": str(sell)}
+        data[name] = {"buy": str(buy), "sell": str(sell)}
 
-                    if "24" in name:
-                        gram_24 = buy
+        if "24" in name:
+            gram_24 = buy
 
-                if "أوقية" in name or "اونصة" in name or "ounce" in name.lower():
-                    ounce = D(nums[0].text)
-                    data["الأوقية العالمية"] = str(ounce)
+    if "أوقية" in name or "اونصة" in name or "ounce" in name.lower():
+        ounce = D(nums[0].text)
+        data["الأوقية العالمية"] = str(ounce)
 
             dollar = None
             if gram_24 and ounce:
@@ -137,7 +137,7 @@ def format_msg(data):
     for k, v in data.items():
         if isinstance(v, dict):
             msg += f"🔸 <b>{k}</b>\n"
-            msg += f"🟢 شراء: {v['buy']} | 🔴 بيع: {v['sell']}\n"
+            msg += f"🔴 بيع: {v['sell']} | 🟢 شراء: {v['buy']}\n"
             msg += "──────────────\n"
         else:
             msg += f"📌 {k}: <b>{v}</b>\n"
