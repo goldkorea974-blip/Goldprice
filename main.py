@@ -137,7 +137,7 @@ def format_msg(data):
     for k, v in data.items():
         if isinstance(v, dict):
             msg += f"🔸 <b>{k}</b>\n"
-            msg += f"🔴 بيع: {v['sell']} | 🟢 شراء: {v['buy']}\n"
+            msg += f"🟢 بيع: {v['sell']} | 🔴 شراء: {v['buy']}\n"
             msg += "──────────────\n"
         else:
             msg += f"📌 {k}: <b>{v}</b>\n"
