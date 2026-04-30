@@ -33,9 +33,7 @@ egypt_tz = pytz.timezone("Africa/Cairo")
 # STATE
 # =====================
 last_hash = None
-last_sent_value = None
-start_sent = False
-end_sent = False
+last_dollar = None
 
 # =====================
 # LOG
@@ -55,8 +53,6 @@ def D(x):
 def get_snapshot(retries=3):
     for attempt in range(retries):
         try:
-            log(f"Fetching data attempt {attempt+1}")
-
             html = requests.get(
                 URL,
                 headers={"User-Agent": "Mozilla/5.0"},
@@ -100,23 +96,19 @@ def get_snapshot(retries=3):
                 dollar = (gram_24 * Decimal("31.1034768")) / ounce
                 data["دولار الصاغة"] = f"{dollar:.2f}"
 
-            # =====================
-            # HASH (منع التكرار)
-            # =====================
+            # 🔥 HASH للتغيير
             page_hash = hashlib.md5(str(data).encode()).hexdigest()
 
-            log("Snapshot OK")
             return data, dollar, page_hash
 
         except Exception as e:
-            log(f"Snapshot error: {e}")
+            log(f"Error: {e}")
             time.sleep(2)
 
-    log("Snapshot FAILED ❌")
     return {}, None, None
 
 # =====================
-# TELEGRAM SEND
+# TELEGRAM
 # =====================
 def send(msg):
     url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
@@ -138,10 +130,10 @@ def send(msg):
     }, timeout=10)
 
 # =====================
-# FORMAT MESSAGE
+# FORMAT
 # =====================
 def format_msg(data):
-    msg = "💎 <b>تحديث أسعار الذهب</b>\n\n"
+    msg = "💎 <b>تحديث لحظي للذهب</b>\n\n"
     msg += "━━━━━━━━━━━━━━\n"
 
     for k, v in data.items():
@@ -156,52 +148,46 @@ def format_msg(data):
     return msg
 
 # =====================
-# LOOP
+# LOOP (LIVE SYSTEM)
 # =====================
 def loop():
-    global last_hash, last_sent_value, start_sent, end_sent
+    global last_hash, last_dollar
 
     while True:
         try:
-            now = datetime.now(egypt_tz)
-            hour = now.hour
+            data, dollar, page_hash = get_snapshot()
 
-            log(f"Tick | {hour}")
+            if not data:
+                continue
 
-            if 10 <= hour <= 23:
+            # 🔥 أول تشغيل
+            if last_hash is None:
+                send(format_msg(data))
+                last_hash = page_hash
+                last_dollar = dollar
+                time.sleep(10)
+                continue
 
-                data, dollar, page_hash = get_snapshot()
+            # 🔥 أي تغيير مهما كان صغير
+            if page_hash != last_hash:
 
-                if data:
+                send(format_msg(data))
 
-                    # 🔥 منع التكرار
-                    if page_hash != last_hash:
+                last_hash = page_hash
+                last_dollar = dollar
 
-                        send(format_msg(data))
-
-                        last_hash = page_hash
-                        last_sent_value = dollar
-
-                        start_sent = True
-                        end_sent = False
-
-            elif hour == 0 and not end_sent:
-                data, _, _ = get_snapshot()
-                send("📉 نهاية التداول")
-                end_sent = True
-                start_sent = False
+            time.sleep(10)
 
         except Exception as e:
             log(f"Loop error: {e}")
-
-        time.sleep(15)
+            time.sleep(5)
 
 # =====================
 # API
 # =====================
 @app.route("/")
 def home():
-    return "💎 Gold Bot Running"
+    return "💎 Live Gold System Running"
 
 @app.route("/api")
 def api():
