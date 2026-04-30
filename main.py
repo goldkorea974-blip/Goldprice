@@ -23,7 +23,7 @@ getcontext().prec = 28
 
 last_sent_value = None
 end_sent = False
-
+start_sent = False
 # =====================
 # CLEAN DECIMAL
 # =====================
@@ -133,45 +133,51 @@ def format_end_msg(data):
 # LOOP
 # =====================
 def loop():
-    global last_sent_value, end_sent
+    global last_sent_value, end_sent, start_sent
 
     while True:
         try:
             now = datetime.now()
             hour = now.hour
-            minute = now.minute
 
-            # ✅ وقت الشغل
+            # 🟢 بداية اليوم
             if 10 <= hour <= 23:
 
-                end_sent = False
+                if hour >= 10 and not start_sent:
+                    data, dollar = get_snapshot()
+                    send(format_msg(data))
+                    last_sent_value = dollar
+                    start_sent = True
+                    end_sent = False
+                    print("🟢 بداية اليوم")
 
-                data, dollar = get_snapshot()
+                else:
+                    data, dollar = get_snapshot()
 
-                if dollar is not None:
+                    if dollar is not None:
 
-                    if last_sent_value is not None:
-                        diff = abs(dollar - last_sent_value)
+                        if last_sent_value is not None:
+                            diff = abs(dollar - last_sent_value)
 
-                        if diff > Decimal("0.05"):
-                            print("⚠️ فرق:", diff)
+                            if diff > Decimal("0.05"):
+                                print("⚠️ فرق:", diff)
 
-                    if dollar != last_sent_value:
-                        send(format_msg(data))
-                        last_sent_value = dollar
+                        if dollar != last_sent_value:
+                            send(format_msg(data))
+                            last_sent_value = dollar
 
-            # ✅ رسالة نهاية اليوم
-            elif hour == 0 and minute == 0 and not end_sent:
+            # 🌙 نهاية اليوم
+            elif hour == 0 and not end_sent:
                 data, _ = get_snapshot()
                 send(format_end_msg(data))
                 end_sent = True
+                start_sent = False
                 print("📉 تم إرسال إغلاق اليوم")
 
         except Exception as e:
             print("Error:", e)
 
         time.sleep(60)
-
 # =====================
 # API
 # =====================
