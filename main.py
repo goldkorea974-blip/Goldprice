@@ -81,10 +81,14 @@ def get_snapshot(retries=3):
                     sell = D(nums[0].text)
                     buy = D(nums[1].text)
 
-                    data[name] = {"buy": str(buy), "sell": str(sell)}
+                    data[name] = {
+                        "buy": str(buy),
+                        "sell": str(sell)
+                    }
 
+                    # ✅ مهم: استخدام SELL بدل BUY
                     if "24" in name:
-                        gram_24 = buy
+                        gram_24 = sell
 
                 if "أوقية" in name or "اونصة" in name or "ounce" in name.lower():
                     ounce = D(nums[0].text)
@@ -94,7 +98,7 @@ def get_snapshot(retries=3):
             if gram_24 and ounce:
                 dollar = (gram_24 * Decimal("31.1034768")) / ounce
 
-                # ✅ بدون أي تقريب + عرض ثابت
+                # ✅ عرض ثابت بدون تقريب يدوي
                 data["دولار الصاغة"] = f"{dollar:.2f}"
 
             log("Snapshot OK")
@@ -130,7 +134,7 @@ def send(msg):
     }, timeout=10)
 
 # =====================
-# FORMAT
+# FORMAT MESSAGE
 # =====================
 def format_msg(data):
     msg = "💎 <b>تحديث أسعار الذهب</b>\n\n"
