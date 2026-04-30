@@ -22,6 +22,9 @@ TOKEN = "8165343576:AAGr_uWTBUMGCgcdahiCicHN3DehLaBOUf0"
 CHANNEL = "@AndriaGold"
 URL = "https://edahabapp.com/"
 
+SITE_LINK = "https://andriagold.netlify.app/"
+CHANNEL_LINK = "https://t.me/AndreaGold"
+
 getcontext().prec = 28
 egypt_tz = pytz.timezone("Africa/Cairo")
 
@@ -30,8 +33,6 @@ egypt_tz = pytz.timezone("Africa/Cairo")
 # =====================
 last_hash = None
 last_sent_time = 0
-price_history = []
-MAX_HISTORY = 5
 
 # =====================
 # LOG
@@ -46,14 +47,9 @@ def D(x):
     return Decimal(x.replace(",", "").strip())
 
 # =====================
-# EXTRACT KARAT SAFELY
+# KARAT MAP SAFE
 # =====================
-karat_map = {
-    "24": 24,
-    "21": 21,
-    "18": 18,
-    "14": 14
-}
+karat_map = {"24": 24, "21": 21, "18": 18, "14": 14}
 
 def extract_karat(name):
     for k in karat_map:
@@ -72,25 +68,49 @@ def get_snapshot():
 
         data = {}
 
+        gram_24 = None
+        ounce = None
+
         for item in items:
             title = item.find("span", class_="font-medium")
             nums = item.find_all("span", class_="number-font")
 
-            if not title or len(nums) < 2:
+            if not title:
                 continue
 
             name = title.text.strip()
 
-            # لازم يكون فيه رقم عيار
-            if not any(k in name for k in karat_map.keys()):
-                continue
+            # ================= GOLD =================
+            if any(k in name for k in karat_map):
+                if len(nums) >= 2:
+                    sell = float(D(nums[0].text))
+                    buy = float(D(nums[1].text))
 
-            try:
-                sell = float(D(nums[0].text))
-                buy = float(D(nums[1].text))
-                data[name] = {"sell": sell, "buy": buy}
-            except:
-                continue
+                    data[name] = {"sell": sell, "buy": buy}
+
+                    if "24" in name:
+                        gram_24 = sell
+
+            # ================= OUNCE =================
+            if "أوقية" in name or "ounce" in name.lower():
+                try:
+                    ounce = float(D(nums[0].text))
+                    data["الأوقية العالمية"] = ounce
+                except:
+                    pass
+
+            # ================= USD =================
+            if "الدولار" in name:
+                try:
+                    usd = float(D(nums[0].text))
+                    data["الدولار الأمريكي"] = usd
+                except:
+                    pass
+
+        # ================= GOLD USD =================
+        if gram_24 and ounce:
+            gold_usd = (gram_24 * 31.1034768) / ounce
+            data["دولار الصاغة"] = round(gold_usd, 2)
 
         return data
 
@@ -141,17 +161,6 @@ def analyze(data):
     return best_ref, confidence
 
 # =====================
-# PREDICTION (WMA)
-# =====================
-def predict_next():
-    if len(price_history) < 3:
-        return None
-
-    p = price_history
-    predicted = (p[-1]*3 + p[-2]*2 + p[-3]) / 6
-    return round(predicted, 2)
-
-# =====================
 # FORMAT MESSAGE
 # =====================
 def format_msg(data, confidence, ref):
@@ -160,27 +169,37 @@ def format_msg(data, confidence, ref):
     msg += "━━━━━━━━━━━━━━\n"
 
     for k, v in data.items():
-        c = confidence.get(k, 0)
-        msg += f"🔸 <b>{k}</b> ({c:.1f}%)\n"
-        msg += f"🟢 بيع: {v['sell']} | 🔴 شراء: {v['buy']}\n"
-        msg += "──────────────\n"
-
-    pred = predict_next()
-    if pred:
-        msg += f"\n📈 <b>السعر المتوقع القادم:</b> {pred}\n"
+        if isinstance(v, dict):
+            c = confidence.get(k, 0)
+            msg += f"🔸 <b>{k}</b> ({c:.1f}%)\n"
+            msg += f"🟢 بيع: {v['sell']} | 🔴 شراء: {v['buy']}\n"
+            msg += "──────────────\n"
+        else:
+            msg += f"📌 {k}: <b>{v}</b>\n"
 
     msg += "━━━━━━━━━━━━━━\n"
     return msg
 
 # =====================
-# TELEGRAM SEND
+# TELEGRAM SEND (WITH BUTTONS)
 # =====================
 def send(msg):
     url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
+
+    keyboard = {
+        "inline_keyboard": [
+            [
+                {"text": "🌐 الموقع", "url": SITE_LINK},
+                {"text": "📢 القناة", "url": CHANNEL_LINK}
+            ]
+        ]
+    }
+
     requests.post(url, data={
         "chat_id": CHANNEL,
         "text": msg,
-        "parse_mode": "HTML"
+        "parse_mode": "HTML",
+        "reply_markup": json.dumps(keyboard)
     })
 
 # =====================
@@ -198,13 +217,6 @@ def loop():
                 time.sleep(5)
                 continue
 
-            # حفظ سعر 24 للتوقع
-            for k, v in data.items():
-                if "24" in k:
-                    price_history.append(v["sell"])
-                    if len(price_history) > MAX_HISTORY:
-                        price_history.pop(0)
-
             ref, confidence = analyze(data)
 
             page_hash = hashlib.md5(
@@ -213,7 +225,7 @@ def loop():
 
             now = time.time()
 
-            # أول إرسال
+            # أول رسالة
             if first_run:
                 send(format_msg(data, confidence, ref))
                 last_hash = page_hash
