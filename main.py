@@ -17,7 +17,7 @@ app = Flask(__name__)
 # =====================
 # CONFIG
 # =====================
-TOKEN = "8165343576:AAGr_uWTBUMGCgcdahiCicHN3DehLaBOUf0"   # ⚠️ حط التوكن الجديد هنا
+TOKEN = "8165343576:AAGr_uWTBUMGCgcdahiCicHN3DehLaBOUf0"
 CHANNEL = "@AndriaGold"
 URL = "https://edahabapp.com/"
 
@@ -93,7 +93,9 @@ def get_snapshot(retries=3):
             dollar = None
             if gram_24 and ounce:
                 dollar = (gram_24 * Decimal("31.1034768")) / ounce
-                data["دولار الصاغة"] = str(round(dollar, 2))
+
+                # ❗ بدون أي تقريب نهائي
+                data["دولار الصاغة"] = str(dollar)
 
             log("Snapshot OK")
             return data, dollar
@@ -175,7 +177,6 @@ def loop():
 
             log(f"Tick | {hour} | start_sent={start_sent}")
 
-            # OPEN MARKET
             if 10 <= hour <= 23:
 
                 if not start_sent:
@@ -197,7 +198,6 @@ def loop():
                             send(format_msg(data))
                             last_sent_value = dollar
 
-            # CLOSE MARKET
             elif hour == 0 and not end_sent:
                 log("📉 END MARKET")
 
