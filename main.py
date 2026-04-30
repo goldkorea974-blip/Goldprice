@@ -1,6 +1,6 @@
-import json
 import os
 import time
+import json
 import requests
 from bs4 import BeautifulSoup
 from decimal import Decimal, getcontext
@@ -17,7 +17,7 @@ app = Flask(__name__)
 # =====================
 # CONFIG
 # =====================
-TOKEN = "8165343576:AAGr_uWTBUMGCgcdahiCicHN3DehLaBOUf0"   
+TOKEN = "8165343576:AAGr_uWTBUMGCgcdahiCicHN3DehLaBOUf0"   # ⚠️ حط التوكن الجديد هنا
 CHANNEL = "@AndriaGold"
 URL = "https://edahabapp.com/"
 
@@ -69,26 +69,26 @@ def get_snapshot(retries=3):
             ounce = None
 
             for item in items:
-    title = item.find("span", class_="font-medium")
-    nums = item.find_all("span", class_="number-font")
+                title = item.find("span", class_="font-medium")
+                nums = item.find_all("span", class_="number-font")
 
-    if not title or len(nums) == 0:
-        continue
+                if not title or len(nums) == 0:
+                    continue
 
-    name = title.text.strip()
+                name = title.text.strip()
 
-    if "عيار" in name and len(nums) >= 2:
-        sell = D(nums[0].text)  # بيع (أعلى)
-        buy = D(nums[1].text)   # شراء (أقل)
+                if "عيار" in name and len(nums) >= 2:
+                    sell = D(nums[0].text)
+                    buy = D(nums[1].text)
 
-        data[name] = {"buy": str(buy), "sell": str(sell)}
+                    data[name] = {"buy": str(buy), "sell": str(sell)}
 
-        if "24" in name:
-            gram_24 = buy
+                    if "24" in name:
+                        gram_24 = buy
 
-    if "أوقية" in name or "اونصة" in name or "ounce" in name.lower():
-        ounce = D(nums[0].text)
-        data["الأوقية العالمية"] = str(ounce)
+                if "أوقية" in name or "اونصة" in name or "ounce" in name.lower():
+                    ounce = D(nums[0].text)
+                    data["الأوقية العالمية"] = str(ounce)
 
             dollar = None
             if gram_24 and ounce:
@@ -106,7 +106,7 @@ def get_snapshot(retries=3):
     return {}, None
 
 # =====================
-# TELEGRAM SEND (FIXED)
+# TELEGRAM SEND
 # =====================
 def send(msg):
     url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
@@ -159,7 +159,6 @@ def format_end_msg(data):
             msg += "──────────────\n"
 
     msg += "━━━━━━━━━━━━━━\n"
-
     msg += "\n📊 تم إغلاق السوق\n"
     return msg
 
@@ -176,9 +175,7 @@ def loop():
 
             log(f"Tick | {hour} | start_sent={start_sent}")
 
-            # =====================
             # OPEN MARKET
-            # =====================
             if 10 <= hour <= 23:
 
                 if not start_sent:
@@ -200,9 +197,7 @@ def loop():
                             send(format_msg(data))
                             last_sent_value = dollar
 
-            # =====================
             # CLOSE MARKET
-            # =====================
             elif hour == 0 and not end_sent:
                 log("📉 END MARKET")
 
