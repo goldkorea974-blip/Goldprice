@@ -1,99 +1,239 @@
-<!DOCTYPE html>
-<html lang="ar">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>أسعار الذهب</title>
+import json
+import os
+import time
+import requests
+from bs4 import BeautifulSoup
+from decimal import Decimal, getcontext
+from flask import Flask, jsonify
+from threading import Thread
+from datetime import datetime
+import pytz
 
-<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700&display=swap" rel="stylesheet">
+# =====================
+# FLASK APP
+# =====================
+app = Flask(__name__)
 
-<style>
-body {
-    font-family: 'Cairo', sans-serif;
-    background: linear-gradient(135deg, #111827, #1f2937);
-    margin: 0;
-    padding: 20px;
-    color: white;
-}
+# =====================
+# CONFIG
+# =====================
+TOKEN = "8165343576:AAGr_uWTBUMGCgcdahiCicHN3DehLaBOUf0"   
+CHANNEL = "@AndriaGold"
+URL = "https://edahabapp.com/"
 
-h1 {
-    text-align: center;
-    color: gold;
-}
+getcontext().prec = 28
 
-.section-title {
-    margin-top: 25px;
-    color: #fbbf24;
-    border-bottom: 2px solid #fbbf24;
-}
+# =====================
+# TIMEZONE (مصر)
+# =====================
+egypt_tz = pytz.timezone("Africa/Cairo")
 
-.container {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-    gap: 15px;
-}
+# =====================
+# STATE
+# =====================
+last_sent_value = None
+end_sent = False
+start_sent = False
 
-.card {
-    background: #1f2937;
-    padding: 20px;
-    border-radius: 12px;
-}
+# =====================
+# LOGGING
+# =====================
+def log(msg):
+    print(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}")
 
-.card-title {
-    color: #facc15;
-    margin-bottom: 10px;
-}
+# =====================
+# CLEAN DECIMAL
+# =====================
+def D(x):
+    return Decimal(x.replace(",", "").strip())
 
-.sell { color: #22c55e; }
-.buy { color: #ef4444; }
-</style>
-</head>
+# =====================
+# SNAPSHOT
+# =====================
+def get_snapshot(retries=3):
+    for attempt in range(retries):
+        try:
+            log(f"Fetching data attempt {attempt+1}")
 
-<body>
+            html = requests.get(
+                URL,
+                headers={"User-Agent": "Mozilla/5.0"},
+                timeout=10
+            ).text
 
-<h1>💰 أسعار الذهب لحظيًا</h1>
+            soup = BeautifulSoup(html, "html.parser")
+            items = soup.find_all("div", class_="price-item")
 
-<div class="section-title">الذهب</div>
-<div class="container" id="gold"></div>
+            data = {}
+            gram_24 = None
+            ounce = None
 
-<div class="section-title">العملات</div>
-<div class="container" id="currency"></div>
+            for item in items:
+    title = item.find("span", class_="font-medium")
+    nums = item.find_all("span", class_="number-font")
 
-<script>
-async function load() {
-    const res = await fetch("/api/prices");
-    const data = await res.json();
+    if not title or len(nums) == 0:
+        continue
 
-    const gold = document.getElementById("gold");
-    const currency = document.getElementById("currency");
+    name = title.text.strip()
 
-    gold.innerHTML = "";
-    currency.innerHTML = "";
+    if "عيار" in name and len(nums) >= 2:
+        sell = D(nums[0].text)  # بيع (أعلى)
+        buy = D(nums[1].text)   # شراء (أقل)
 
-    for (let [k, v] of Object.entries(data)) {
-        let card = document.createElement("div");
-        card.className = "card";
+        data[name] = {"buy": str(buy), "sell": str(sell)}
 
-        if (typeof v === "object") {
-            card.innerHTML = `
-                <div class="card-title">${k}</div>
-                <div class="sell">بيع: ${v.بيع}</div>
-                <div class="buy">شراء: ${v.شراء}</div>
-            `;
-            gold.appendChild(card);
-        } else {
-            card.innerHTML = `
-                <div class="card-title">${k}</div>
-                <div>${v}</div>
-            `;
-            currency.appendChild(card);
-        }
+        if "24" in name:
+            gram_24 = buy
+
+    if "أوقية" in name or "اونصة" in name or "ounce" in name.lower():
+        ounce = D(nums[0].text)
+        data["الأوقية العالمية"] = str(ounce)
+
+            dollar = None
+            if gram_24 and ounce:
+                dollar = (gram_24 * Decimal("31.1034768")) / ounce
+                data["دولار الصاغة"] = str(round(dollar, 2))
+
+            log("Snapshot OK")
+            return data, dollar
+
+        except Exception as e:
+            log(f"Snapshot error: {e}")
+            time.sleep(2)
+
+    log("Snapshot FAILED ❌")
+    return {}, None
+
+# =====================
+# TELEGRAM SEND (FIXED)
+# =====================
+def send(msg):
+    url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
+
+    keyboard = {
+        "inline_keyboard": [
+            [
+                {"text": "🌐 الموقع الرسمي", "url": "https://andriagold.netlify.app/"},
+                {"text": "📢 القناة", "url": "https://t.me/AndreaGold"}
+            ]
+        ]
     }
-}
 
-load();
-setInterval(load, 60000);
-</script>
+    requests.post(url, data={
+        "chat_id": CHANNEL,
+        "text": msg,
+        "parse_mode": "HTML",
+        "reply_markup": json.dumps(keyboard)
+    }, timeout=10)
 
-</body>
-</html>
+# =====================
+# FORMAT LIVE
+# =====================
+def format_msg(data):
+    msg = "💎 <b>تحديث أسعار الذهب</b>\n\n"
+    msg += "━━━━━━━━━━━━━━\n"
+
+    for k, v in data.items():
+        if isinstance(v, dict):
+            msg += f"🔸 <b>{k}</b>\n"
+            msg += f"🟢 شراء: {v['buy']} | 🔴 بيع: {v['sell']}\n"
+            msg += "──────────────\n"
+        else:
+            msg += f"📌 {k}: <b>{v}</b>\n"
+
+    msg += "━━━━━━━━━━━━━━\n"
+    return msg
+
+# =====================
+# END DAY
+# =====================
+def format_end_msg(data):
+    msg = "📉 <b>نهاية تداول اليوم</b>\n\n"
+    msg += "━━━━━━━━━━━━━━\n"
+
+    for k, v in data.items():
+        if isinstance(v, dict):
+            msg += f"🔸 {k}\n"
+            msg += f"بيع: {v['sell']} | شراء: {v['buy']}\n"
+            msg += "──────────────\n"
+
+    msg += "━━━━━━━━━━━━━━\n"
+
+    msg += "\n📊 تم إغلاق السوق\n"
+    return msg
+
+# =====================
+# LOOP
+# =====================
+def loop():
+    global last_sent_value, start_sent, end_sent
+
+    while True:
+        try:
+            now = datetime.now(egypt_tz)
+            hour = now.hour
+
+            log(f"Tick | {hour} | start_sent={start_sent}")
+
+            # =====================
+            # OPEN MARKET
+            # =====================
+            if 10 <= hour <= 23:
+
+                if not start_sent:
+                    log("🚀 START MARKET")
+
+                    data, dollar = get_snapshot()
+
+                    if data:
+                        send(format_msg(data))
+                        last_sent_value = dollar
+                        start_sent = True
+                        end_sent = False
+
+                else:
+                    data, dollar = get_snapshot()
+
+                    if dollar is not None and last_sent_value is not None:
+                        if abs(dollar - last_sent_value) > Decimal("0.05"):
+                            send(format_msg(data))
+                            last_sent_value = dollar
+
+            # =====================
+            # CLOSE MARKET
+            # =====================
+            elif hour == 0 and not end_sent:
+                log("📉 END MARKET")
+
+                data, _ = get_snapshot()
+                send(format_end_msg(data))
+
+                end_sent = True
+                start_sent = False
+
+        except Exception as e:
+            log(f"Loop error: {e}")
+
+        time.sleep(60)
+
+# =====================
+# API
+# =====================
+@app.route("/")
+def home():
+    return "💎 Gold Bot Running ✅"
+
+@app.route("/api")
+def api():
+    data, _ = get_snapshot()
+    return jsonify(data)
+
+# =====================
+# START
+# =====================
+if __name__ == "__main__":
+    Thread(target=loop, daemon=True).start()
+
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
