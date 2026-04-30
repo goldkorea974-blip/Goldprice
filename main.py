@@ -1,6 +1,7 @@
 import os
 import time
 import json
+import hashlib
 import requests
 from bs4 import BeautifulSoup
 from decimal import Decimal, getcontext
@@ -31,6 +32,7 @@ egypt_tz = pytz.timezone("Africa/Cairo")
 # =====================
 # STATE
 # =====================
+last_hash = None
 last_sent_value = None
 start_sent = False
 end_sent = False
@@ -42,7 +44,7 @@ def log(msg):
     print(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}")
 
 # =====================
-# DECIMAL CLEAN
+# CLEAN DECIMAL
 # =====================
 def D(x):
     return Decimal(x.replace(",", "").strip())
@@ -86,7 +88,6 @@ def get_snapshot(retries=3):
                         "sell": str(sell)
                     }
 
-                    # ✅ مهم: استخدام SELL بدل BUY
                     if "24" in name:
                         gram_24 = sell
 
@@ -97,19 +98,22 @@ def get_snapshot(retries=3):
             dollar = None
             if gram_24 and ounce:
                 dollar = (gram_24 * Decimal("31.1034768")) / ounce
-
-                # ✅ عرض ثابت بدون تقريب يدوي
                 data["دولار الصاغة"] = f"{dollar:.2f}"
 
+            # =====================
+            # HASH (منع التكرار)
+            # =====================
+            page_hash = hashlib.md5(str(data).encode()).hexdigest()
+
             log("Snapshot OK")
-            return data, dollar
+            return data, dollar, page_hash
 
         except Exception as e:
             log(f"Snapshot error: {e}")
             time.sleep(2)
 
     log("Snapshot FAILED ❌")
-    return {}, None
+    return {}, None, None
 
 # =====================
 # TELEGRAM SEND
@@ -155,7 +159,7 @@ def format_msg(data):
 # LOOP
 # =====================
 def loop():
-    global last_sent_value, start_sent, end_sent
+    global last_hash, last_sent_value, start_sent, end_sent
 
     while True:
         try:
@@ -166,25 +170,23 @@ def loop():
 
             if 10 <= hour <= 23:
 
-                if not start_sent:
-                    data, dollar = get_snapshot()
+                data, dollar, page_hash = get_snapshot()
 
-                    if data:
+                if data:
+
+                    # 🔥 منع التكرار
+                    if page_hash != last_hash:
+
                         send(format_msg(data))
+
+                        last_hash = page_hash
                         last_sent_value = dollar
+
                         start_sent = True
                         end_sent = False
 
-                else:
-                    data, dollar = get_snapshot()
-
-                    if dollar and last_sent_value:
-                        if abs(dollar - last_sent_value) > Decimal("0.05"):
-                            send(format_msg(data))
-                            last_sent_value = dollar
-
             elif hour == 0 and not end_sent:
-                data, _ = get_snapshot()
+                data, _, _ = get_snapshot()
                 send("📉 نهاية التداول")
                 end_sent = True
                 start_sent = False
@@ -192,7 +194,7 @@ def loop():
         except Exception as e:
             log(f"Loop error: {e}")
 
-        time.sleep(60)
+        time.sleep(15)
 
 # =====================
 # API
@@ -203,7 +205,7 @@ def home():
 
 @app.route("/api")
 def api():
-    data, _ = get_snapshot()
+    data, _, _ = get_snapshot()
     return jsonify(data)
 
 # =====================
