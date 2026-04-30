@@ -6,6 +6,7 @@ from decimal import Decimal, getcontext
 from flask import Flask, jsonify
 from threading import Thread
 from datetime import datetime
+import pytz
 
 # =====================
 # FLASK APP
@@ -21,6 +22,14 @@ URL = "https://edahabapp.com/"
 
 getcontext().prec = 28
 
+# =====================
+# TIMEZONE (مصر)
+# =====================
+egypt_tz = pytz.timezone("Africa/Cairo")
+
+# =====================
+# STATE
+# =====================
 last_sent_value = None
 end_sent = False
 start_sent = False
@@ -38,12 +47,12 @@ def D(x):
     return Decimal(x.replace(",", "").strip())
 
 # =====================
-# SNAPSHOT ENGINE (WITH RETRY)
+# SNAPSHOT WITH RETRY
 # =====================
 def get_snapshot(retries=3):
     for attempt in range(retries):
         try:
-            log(f"Fetching data (attempt {attempt+1})")
+            log(f"Fetching data attempt {attempt+1}")
 
             html = requests.get(
                 URL,
@@ -67,20 +76,15 @@ def get_snapshot(retries=3):
 
                 name = title.text.strip()
 
-                # GOLD
                 if "عيار" in name and len(nums) >= 2:
                     buy = D(nums[0].text)
                     sell = D(nums[1].text)
 
-                    data[name] = {
-                        "buy": str(buy),
-                        "sell": str(sell)
-                    }
+                    data[name] = {"buy": str(buy), "sell": str(sell)}
 
                     if "24" in name:
                         gram_24 = buy
 
-                # OUNCE
                 if "أوقية" in name or "اونصة" in name or "ounce" in name.lower():
                     ounce = D(nums[0].text)
                     data["الأوقية العالمية"] = str(ounce)
@@ -91,14 +95,14 @@ def get_snapshot(retries=3):
                 dollar = raw
                 data["دولار الصاغة"] = str(round(dollar, 2))
 
-            log("Snapshot success")
+            log("Snapshot OK")
             return data, dollar
 
         except Exception as e:
             log(f"Snapshot error: {e}")
             time.sleep(2)
 
-    log("Snapshot FAILED after retries ❌")
+    log("Snapshot FAILED ❌")
     return {}, None
 
 # =====================
@@ -114,10 +118,10 @@ def send(msg):
         })
         log("Message sent ✔️")
     except Exception as e:
-        log(f"Send error: {e}")
+        log(f"Telegram error: {e}")
 
 # =====================
-# FORMAT LIVE MESSAGE
+# FORMAT LIVE
 # =====================
 def format_msg(data):
     msg = "💎 <b>تحديث أسعار الذهب</b>\n\n"
@@ -132,14 +136,10 @@ def format_msg(data):
             msg += f"📌 {k}: {v}\n"
 
     msg += "━━━━━━━━━━━━━━\n"
-    msg += '🌐 <a href="https://andriagold.netlify.app/">افتح الموقع</a>\n'
-    msg += "━━━━━━━━━━━━━━\n"
-    msg += '📢 <a href="https://t.me/AndreaGold">تعالا شوف شغلنا</a>\n'
-
     return msg
 
 # =====================
-# FORMAT END DAY MESSAGE
+# END DAY
 # =====================
 def format_end_msg(data):
     msg = "📉 <b>نهاية تداول اليوم</b>\n\n"
@@ -153,27 +153,29 @@ def format_end_msg(data):
             msg += "──────────────\n"
 
     msg += "━━━━━━━━━━━━━━\n"
-
     return msg
 
 # =====================
 # LOOP
 # =====================
 def loop():
-    global last_sent_value, end_sent, start_sent
+    global last_sent_value, start_sent, end_sent
 
     while True:
         try:
-            now = datetime.now()
+            now = datetime.now(egypt_tz)
             hour = now.hour
+            minute = now.minute
 
-            log(f"Loop tick | hour={hour} start_sent={start_sent}")
+            log(f"Tick | {hour}:{minute} | start_sent={start_sent}")
 
-            # 🟢 START (10 AM)
+            # =====================
+            # OPEN MARKET (10 AM)
+            # =====================
             if 10 <= hour <= 23:
 
                 if hour >= 10 and not start_sent:
-                    log("🚀 Sending START message")
+                    log("🚀 START MARKET")
 
                     data, dollar = get_snapshot()
 
@@ -182,29 +184,26 @@ def loop():
                         last_sent_value = dollar
                         start_sent = True
                         end_sent = False
-                        log("🟢 START sent")
-                    else:
-                        log("❌ START skipped (no data)")
+                        log("START SENT ✔️")
 
                 else:
                     data, dollar = get_snapshot()
 
-                    if dollar is not None:
+                    if dollar is not None and last_sent_value is not None:
+                        diff = abs(dollar - last_sent_value)
 
-                        if last_sent_value is not None:
-                            diff = abs(dollar - last_sent_value)
+                        if diff > Decimal("0.05"):
+                            log(f"Change: {diff}")
 
-                            if diff > Decimal("0.05"):
-                                log(f"⚠️ Change detected: {diff}")
+                    if dollar != last_sent_value:
+                        send(format_msg(data))
+                        last_sent_value = dollar
 
-                        if dollar != last_sent_value:
-                            send(format_msg(data))
-                            last_sent_value = dollar
-                            log("📤 Update sent")
-
-            # 🌙 END (12 AM)
+            # =====================
+            # CLOSE MARKET (12 AM)
+            # =====================
             elif hour == 0 and not end_sent:
-                log("📉 Sending END message")
+                log("📉 END MARKET")
 
                 data, _ = get_snapshot()
                 send(format_end_msg(data))
@@ -212,7 +211,7 @@ def loop():
                 end_sent = True
                 start_sent = False
 
-                log("📉 END sent")
+                log("END SENT ✔️")
 
         except Exception as e:
             log(f"Loop error: {e}")
