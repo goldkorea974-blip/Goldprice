@@ -23,7 +23,6 @@ CHANNEL = "@AndriaGold"
 URL = "https://edahabapp.com/"
 
 getcontext().prec = 28
-
 egypt_tz = pytz.timezone("Africa/Cairo")
 
 # =====================
@@ -31,8 +30,6 @@ egypt_tz = pytz.timezone("Africa/Cairo")
 # =====================
 last_hash = None
 last_sent_time = 0
-
-# لتوقع السعر
 price_history = []
 MAX_HISTORY = 5
 
@@ -43,10 +40,26 @@ def log(msg):
     print(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}")
 
 # =====================
-# CLEAN
+# CLEAN NUMBER
 # =====================
 def D(x):
     return Decimal(x.replace(",", "").strip())
+
+# =====================
+# EXTRACT KARAT SAFELY
+# =====================
+karat_map = {
+    "24": 24,
+    "21": 21,
+    "18": 18,
+    "14": 14
+}
+
+def extract_karat(name):
+    for k in karat_map:
+        if k in name:
+            return karat_map[k]
+    return None
 
 # =====================
 # SNAPSHOT
@@ -68,11 +81,16 @@ def get_snapshot():
 
             name = title.text.strip()
 
-            if "عيار" in name:
+            # لازم يكون فيه رقم عيار
+            if not any(k in name for k in karat_map.keys()):
+                continue
+
+            try:
                 sell = float(D(nums[0].text))
                 buy = float(D(nums[1].text))
-
                 data[name] = {"sell": sell, "buy": buy}
+            except:
+                continue
 
         return data
 
@@ -81,17 +99,17 @@ def get_snapshot():
         return {}
 
 # =====================
-# ANALYSIS
+# ANALYSIS ENGINE
 # =====================
-karat_map = {"24": 24, "21": 21, "18": 18, "14": 14}
-
 def analyze(data):
-    gold = {k: v for k, v in data.items() if "عيار" in k}
+    gold = {k: v for k, v in data.items() if any(x in k for x in karat_map)}
 
     scores = {}
 
     for ref in gold:
-        ref_k = karat_map[ref.split()[1]]
+        ref_k = extract_karat(ref)
+        if not ref_k:
+            continue
 
         errors = []
 
@@ -99,12 +117,17 @@ def analyze(data):
             if k == ref:
                 continue
 
-            k_k = karat_map[k.split()[1]]
-            estimated = gold[k]["sell"] * (ref_k / k_k)
+            k_k = extract_karat(k)
+            if not k_k:
+                continue
 
+            estimated = gold[k]["sell"] * (ref_k / k_k)
             errors.append(abs(gold[ref]["sell"] - estimated))
 
         scores[ref] = sum(errors) / len(errors) if errors else 9999
+
+    if not scores:
+        return None, {}
 
     best_ref = min(scores, key=scores.get)
 
@@ -118,16 +141,14 @@ def analyze(data):
     return best_ref, confidence
 
 # =====================
-# 📊 PREDICTION ENGINE (WMA)
+# PREDICTION (WMA)
 # =====================
 def predict_next():
     if len(price_history) < 3:
         return None
 
     p = price_history
-
-    predicted = (p[-1]*3 + p[-2]*2 + p[-3]*1) / 6
-
+    predicted = (p[-1]*3 + p[-2]*2 + p[-3]) / 6
     return round(predicted, 2)
 
 # =====================
@@ -139,11 +160,10 @@ def format_msg(data, confidence, ref):
     msg += "━━━━━━━━━━━━━━\n"
 
     for k, v in data.items():
-        if "عيار" in k:
-            c = confidence.get(k, 0)
-            msg += f"🔸 <b>{k}</b> ({c:.1f}%)\n"
-            msg += f"🟢 بيع: {v['sell']} | 🔴 شراء: {v['buy']}\n"
-            msg += "──────────────\n"
+        c = confidence.get(k, 0)
+        msg += f"🔸 <b>{k}</b> ({c:.1f}%)\n"
+        msg += f"🟢 بيع: {v['sell']} | 🔴 شراء: {v['buy']}\n"
+        msg += "──────────────\n"
 
     pred = predict_next()
     if pred:
@@ -153,7 +173,7 @@ def format_msg(data, confidence, ref):
     return msg
 
 # =====================
-# TELEGRAM
+# TELEGRAM SEND
 # =====================
 def send(msg):
     url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
@@ -179,10 +199,11 @@ def loop():
                 continue
 
             # حفظ سعر 24 للتوقع
-            if "عيار 24" in data:
-                price_history.append(data["عيار 24"]["sell"])
-                if len(price_history) > MAX_HISTORY:
-                    price_history.pop(0)
+            for k, v in data.items():
+                if "24" in k:
+                    price_history.append(v["sell"])
+                    if len(price_history) > MAX_HISTORY:
+                        price_history.pop(0)
 
             ref, confidence = analyze(data)
 
@@ -192,7 +213,7 @@ def loop():
 
             now = time.time()
 
-            # أول رسالة
+            # أول إرسال
             if first_run:
                 send(format_msg(data, confidence, ref))
                 last_hash = page_hash
@@ -218,7 +239,7 @@ def loop():
 # =====================
 @app.route("/")
 def home():
-    return "💎 Smart Gold Running"
+    return "💎 Smart Gold System Running"
 
 @app.route("/api")
 def api():
