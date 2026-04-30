@@ -24,7 +24,7 @@ URL = "https://edahabapp.com/"
 getcontext().prec = 28
 
 # =====================
-# TIMEZONE (مصر)
+# TIMEZONE
 # =====================
 egypt_tz = pytz.timezone("Africa/Cairo")
 
@@ -32,17 +32,17 @@ egypt_tz = pytz.timezone("Africa/Cairo")
 # STATE
 # =====================
 last_sent_value = None
-end_sent = False
 start_sent = False
+end_sent = False
 
 # =====================
-# LOGGING
+# LOG
 # =====================
 def log(msg):
     print(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}")
 
 # =====================
-# CLEAN DECIMAL
+# DECIMAL CLEAN
 # =====================
 def D(x):
     return Decimal(x.replace(",", "").strip())
@@ -94,8 +94,8 @@ def get_snapshot(retries=3):
             if gram_24 and ounce:
                 dollar = (gram_24 * Decimal("31.1034768")) / ounce
 
-                # ❗ بدون أي تقريب نهائي
-                data["دولار الصاغة"] = str(dollar)
+                # ✅ بدون أي تقريب + عرض ثابت
+                data["دولار الصاغة"] = f"{dollar:.2f}"
 
             log("Snapshot OK")
             return data, dollar
@@ -116,7 +116,7 @@ def send(msg):
     keyboard = {
         "inline_keyboard": [
             [
-                {"text": "🌐 الموقع الرسمي", "url": "https://andriagold.netlify.app/"},
+                {"text": "🌐 الموقع", "url": "https://andriagold.netlify.app/"},
                 {"text": "📢 القناة", "url": "https://t.me/AndreaGold"}
             ]
         ]
@@ -130,7 +130,7 @@ def send(msg):
     }, timeout=10)
 
 # =====================
-# FORMAT LIVE
+# FORMAT
 # =====================
 def format_msg(data):
     msg = "💎 <b>تحديث أسعار الذهب</b>\n\n"
@@ -148,23 +148,6 @@ def format_msg(data):
     return msg
 
 # =====================
-# END DAY
-# =====================
-def format_end_msg(data):
-    msg = "📉 <b>نهاية تداول اليوم</b>\n\n"
-    msg += "━━━━━━━━━━━━━━\n"
-
-    for k, v in data.items():
-        if isinstance(v, dict):
-            msg += f"🔸 {k}\n"
-            msg += f"بيع: {v['sell']} | شراء: {v['buy']}\n"
-            msg += "──────────────\n"
-
-    msg += "━━━━━━━━━━━━━━\n"
-    msg += "\n📊 تم إغلاق السوق\n"
-    return msg
-
-# =====================
 # LOOP
 # =====================
 def loop():
@@ -175,13 +158,11 @@ def loop():
             now = datetime.now(egypt_tz)
             hour = now.hour
 
-            log(f"Tick | {hour} | start_sent={start_sent}")
+            log(f"Tick | {hour}")
 
             if 10 <= hour <= 23:
 
                 if not start_sent:
-                    log("🚀 START MARKET")
-
                     data, dollar = get_snapshot()
 
                     if data:
@@ -193,17 +174,14 @@ def loop():
                 else:
                     data, dollar = get_snapshot()
 
-                    if dollar is not None and last_sent_value is not None:
+                    if dollar and last_sent_value:
                         if abs(dollar - last_sent_value) > Decimal("0.05"):
                             send(format_msg(data))
                             last_sent_value = dollar
 
             elif hour == 0 and not end_sent:
-                log("📉 END MARKET")
-
                 data, _ = get_snapshot()
-                send(format_end_msg(data))
-
+                send("📉 نهاية التداول")
                 end_sent = True
                 start_sent = False
 
@@ -217,7 +195,7 @@ def loop():
 # =====================
 @app.route("/")
 def home():
-    return "💎 Gold Bot Running ✅"
+    return "💎 Gold Bot Running"
 
 @app.route("/api")
 def api():
@@ -229,6 +207,4 @@ def api():
 # =====================
 if __name__ == "__main__":
     Thread(target=loop, daemon=True).start()
-
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
