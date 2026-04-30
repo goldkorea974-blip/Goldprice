@@ -1,4 +1,3 @@
-import os
 import time
 import requests
 from bs4 import BeautifulSoup
@@ -153,6 +152,10 @@ def format_end_msg(data):
             msg += "──────────────\n"
 
     msg += "━━━━━━━━━━━━━━\n"
+
+    msg += "\n🔗 <a href='https://andriagold.netlify.app/'>افتح الموقع</a>\n"
+    msg += "📢 <a href='https://t.me/AndreaGold'>تعالا شوف شغلنا</a>\n"
+
     return msg
 
 # =====================
