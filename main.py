@@ -17,7 +17,7 @@ app = Flask(__name__)
 # =====================
 # CONFIG
 # =====================
-TOKEN = os.getenv("8165343576:AAGr_uWTBUMGCgcdahiCicHN3DehLaBOUf0")  # 🔐 حط التوكن في البيئة بدل الكود
+TOKEN = "8165343576:AAGr_uWTBUMGCgcdahiCicHN3DehLaBOUf0"   
 CHANNEL = "@AndriaGold"
 URL = "https://edahabapp.com/"
 
