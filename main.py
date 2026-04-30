@@ -5,6 +5,7 @@ from bs4 import BeautifulSoup
 from decimal import Decimal, getcontext
 from flask import Flask, jsonify
 from threading import Thread
+from datetime import datetime
 
 # =====================
 # FLASK APP
@@ -21,6 +22,7 @@ URL = "https://edahabapp.com/"
 getcontext().prec = 28
 
 last_sent_value = None
+end_sent = False
 
 # =====================
 # CLEAN DECIMAL
@@ -49,9 +51,7 @@ def get_snapshot():
 
         name = title.text.strip()
 
-        # =====================
-        # GOLD PRICES
-        # =====================
+        # GOLD
         if "عيار" in name and len(nums) >= 2:
             buy = D(nums[0].text)
             sell = D(nums[1].text)
@@ -61,26 +61,19 @@ def get_snapshot():
                 "sell": str(sell)
             }
 
-            # ✅ استخدام سعر الشراء فقط
             if "24" in name:
                 gram_24 = buy
 
-        # =====================
         # OUNCE
-        # =====================
         if "أوقية" in name or "اونصة" in name or "ounce" in name.lower():
             ounce = D(nums[0].text)
             data["الأوقية العالمية"] = str(ounce)
 
-    # =====================
     # DOLLAR SAGHA
-    # =====================
     dollar = None
-
     if gram_24 and ounce:
         raw = (gram_24 * Decimal("31.1034768")) / ounce
         dollar = raw
-
         data["دولار الصاغة"] = str(round(dollar, 2))
 
     return data, dollar
@@ -97,7 +90,7 @@ def send(msg):
     })
 
 # =====================
-# FORMAT MESSAGE
+# FORMAT LIVE MESSAGE
 # =====================
 def format_msg(data):
     msg = "💎 <b>تحديث أسعار الذهب</b>\n\n"
@@ -117,27 +110,62 @@ def format_msg(data):
     msg += '📢 <a href="https://t.me/AndreaGold">تعالا شوف شغلنا</a>\n'
 
     return msg
+
+# =====================
+# FORMAT END DAY MESSAGE
+# =====================
+def format_end_msg(data):
+    msg = "📉 <b>نهاية تداول اليوم</b>\n\n"
+    msg += "🏁 الأسعار قفلت على:\n"
+    msg += "━━━━━━━━━━━━━━\n"
+
+    for k, v in data.items():
+        if isinstance(v, dict):
+            msg += f"🔸 {k}\n"
+            msg += f"بيع: {v['sell']} | شراء: {v['buy']}\n"
+            msg += "──────────────\n"
+
+    msg += "━━━━━━━━━━━━━━\n"
+
+    return msg
+
 # =====================
 # LOOP
 # =====================
 def loop():
-    global last_sent_value
+    global last_sent_value, end_sent
 
     while True:
         try:
-            data, dollar = get_snapshot()
+            now = datetime.now()
+            hour = now.hour
+            minute = now.minute
 
-            if dollar is not None:
+            # ✅ وقت الشغل
+            if 10 <= hour <= 23:
 
-                if last_sent_value is not None:
-                    diff = abs(dollar - last_sent_value)
+                end_sent = False
 
-                    if diff > Decimal("0.05"):
-                        print("⚠️ فرق:", diff)
+                data, dollar = get_snapshot()
 
-                if dollar != last_sent_value:
-                    send(format_msg(data))
-                    last_sent_value = dollar
+                if dollar is not None:
+
+                    if last_sent_value is not None:
+                        diff = abs(dollar - last_sent_value)
+
+                        if diff > Decimal("0.05"):
+                            print("⚠️ فرق:", diff)
+
+                    if dollar != last_sent_value:
+                        send(format_msg(data))
+                        last_sent_value = dollar
+
+            # ✅ رسالة نهاية اليوم
+            elif hour == 0 and minute == 0 and not end_sent:
+                data, _ = get_snapshot()
+                send(format_end_msg(data))
+                end_sent = True
+                print("📉 تم إرسال إغلاق اليوم")
 
         except Exception as e:
             print("Error:", e)
