@@ -1,3 +1,4 @@
+import json
 import os
 import time
 import requests
@@ -16,7 +17,7 @@ app = Flask(__name__)
 # =====================
 # CONFIG
 # =====================
-TOKEN = "8165343576:AAGr_uWTBUMGCgcdahiCicHN3DehLaBOUf0"
+TOKEN = os.getenv("8165343576:AAGr_uWTBUMGCgcdahiCicHN3DehLaBOUf0")  # 🔐 حط التوكن في البيئة بدل الكود
 CHANNEL = "@AndriaGold"
 URL = "https://edahabapp.com/"
 
@@ -47,7 +48,7 @@ def D(x):
     return Decimal(x.replace(",", "").strip())
 
 # =====================
-# SNAPSHOT WITH RETRY
+# SNAPSHOT
 # =====================
 def get_snapshot(retries=3):
     for attempt in range(retries):
@@ -91,8 +92,7 @@ def get_snapshot(retries=3):
 
             dollar = None
             if gram_24 and ounce:
-                raw = (gram_24 * Decimal("31.1034768")) / ounce
-                dollar = raw
+                dollar = (gram_24 * Decimal("31.1034768")) / ounce
                 data["دولار الصاغة"] = str(round(dollar, 2))
 
             log("Snapshot OK")
@@ -106,19 +106,26 @@ def get_snapshot(retries=3):
     return {}, None
 
 # =====================
-# TELEGRAM SEND
+# TELEGRAM SEND (FIXED)
 # =====================
 def send(msg):
-    try:
-        url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
-        requests.post(url, data={
-            "chat_id": CHANNEL,
-            "text": msg,
-            "parse_mode": "HTML"
-        })
-        log("Message sent ✔️")
-    except Exception as e:
-        log(f"Telegram error: {e}")
+    url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
+
+    keyboard = {
+        "inline_keyboard": [
+            [
+                {"text": "🌐 الموقع الرسمي", "url": "https://andriagold.netlify.app/"},
+                {"text": "📢 القناة", "url": "https://t.me/AndreaGold"}
+            ]
+        ]
+    }
+
+    requests.post(url, data={
+        "chat_id": CHANNEL,
+        "text": msg,
+        "parse_mode": "HTML",
+        "reply_markup": json.dumps(keyboard)
+    }, timeout=10)
 
 # =====================
 # FORMAT LIVE
@@ -129,11 +136,11 @@ def format_msg(data):
 
     for k, v in data.items():
         if isinstance(v, dict):
-            msg += f"🔸 {k}\n"
-            msg += f"بيع: {v['sell']} | شراء: {v['buy']}\n"
+            msg += f"🔸 <b>{k}</b>\n"
+            msg += f"🟢 شراء: {v['buy']} | 🔴 بيع: {v['sell']}\n"
             msg += "──────────────\n"
         else:
-            msg += f"📌 {k}: {v}\n"
+            msg += f"📌 {k}: <b>{v}</b>\n"
 
     msg += "━━━━━━━━━━━━━━\n"
     return msg
@@ -143,7 +150,6 @@ def format_msg(data):
 # =====================
 def format_end_msg(data):
     msg = "📉 <b>نهاية تداول اليوم</b>\n\n"
-    msg += "🏁 الأسعار قفلت على:\n"
     msg += "━━━━━━━━━━━━━━\n"
 
     for k, v in data.items():
@@ -154,9 +160,7 @@ def format_end_msg(data):
 
     msg += "━━━━━━━━━━━━━━\n"
 
-    msg += "\n🔗 <a href='https://andriagold.netlify.app/'>افتح الموقع</a>\n"
-    msg += "📢 <a href='https://t.me/AndreaGold'>تعالا شوف شغلنا</a>\n"
-
+    msg += "\n📊 تم إغلاق السوق\n"
     return msg
 
 # =====================
@@ -169,16 +173,15 @@ def loop():
         try:
             now = datetime.now(egypt_tz)
             hour = now.hour
-            minute = now.minute
 
-            log(f"Tick | {hour}:{minute} | start_sent={start_sent}")
+            log(f"Tick | {hour} | start_sent={start_sent}")
 
             # =====================
-            # OPEN MARKET (10 AM)
+            # OPEN MARKET
             # =====================
             if 10 <= hour <= 23:
 
-                if hour >= 10 and not start_sent:
+                if not start_sent:
                     log("🚀 START MARKET")
 
                     data, dollar = get_snapshot()
@@ -188,23 +191,17 @@ def loop():
                         last_sent_value = dollar
                         start_sent = True
                         end_sent = False
-                        log("START SENT ✔️")
 
                 else:
                     data, dollar = get_snapshot()
 
                     if dollar is not None and last_sent_value is not None:
-                        diff = abs(dollar - last_sent_value)
-
-                        if diff > Decimal("0.05"):
-                            log(f"Change: {diff}")
-
-                    if dollar != last_sent_value:
-                        send(format_msg(data))
-                        last_sent_value = dollar
+                        if abs(dollar - last_sent_value) > Decimal("0.05"):
+                            send(format_msg(data))
+                            last_sent_value = dollar
 
             # =====================
-            # CLOSE MARKET (12 AM)
+            # CLOSE MARKET
             # =====================
             elif hour == 0 and not end_sent:
                 log("📉 END MARKET")
@@ -214,8 +211,6 @@ def loop():
 
                 end_sent = True
                 start_sent = False
-
-                log("END SENT ✔️")
 
         except Exception as e:
             log(f"Loop error: {e}")
