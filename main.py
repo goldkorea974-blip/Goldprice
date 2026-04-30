@@ -24,9 +24,6 @@ URL = "https://edahabapp.com/"
 
 getcontext().prec = 28
 
-# =====================
-# TIMEZONE
-# =====================
 egypt_tz = pytz.timezone("Africa/Cairo")
 
 # =====================
@@ -42,7 +39,7 @@ def log(msg):
     print(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}")
 
 # =====================
-# CLEAN NUMBER
+# CLEAN
 # =====================
 def D(x):
     return Decimal(x.replace(",", "").strip())
@@ -50,153 +47,100 @@ def D(x):
 # =====================
 # SNAPSHOT
 # =====================
-def get_snapshot(retries=3):
-    for _ in range(retries):
-        try:
-            html = requests.get(
-                URL,
-                headers={"User-Agent": "Mozilla/5.0"},
-                timeout=10
-            ).text
+def get_snapshot():
+    try:
+        html = requests.get(URL, headers={"User-Agent": "Mozilla/5.0"}, timeout=10).text
+        soup = BeautifulSoup(html, "html.parser")
+        items = soup.find_all("div", class_="price-item")
 
-            soup = BeautifulSoup(html, "html.parser")
-            items = soup.find_all("div", class_="price-item")
+        data = {}
 
-            data = {}
+        for item in items:
+            title = item.find("span", class_="font-medium")
+            nums = item.find_all("span", class_="number-font")
 
-            gram_24 = None
-            ounce = None
-            usd = None
-
-            for item in items:
-                title = item.find("span", class_="font-medium")
-                nums = item.find_all("span", class_="number-font")
-
-                if not title or len(nums) == 0:
-                    continue
-
-                name = title.text.strip()
-
-                # ================= GOLD =================
-                if "عيار" in name and len(nums) >= 2:
-                    sell = D(nums[0].text)
-                    buy = D(nums[1].text)
-
-                    data[name] = {
-                        "buy": float(buy),
-                        "sell": float(sell)
-                    }
-
-                    if "24" in name:
-                        gram_24 = sell
-
-                # ================= OUNCE =================
-                if "أوقية" in name or "ounce" in name.lower():
-                    ounce = D(nums[0].text)
-                    data["الأوقية العالمية"] = float(ounce)
-
-                # ================= USD =================
-                if "الدولار" in name:
-                    usd = D(nums[0].text)
-                    data["الدولار الأمريكي"] = float(usd)
-
-            # ================= GOLD DOLLAR =================
-            if gram_24 and ounce:
-                gold_usd = (gram_24 * Decimal("31.1034768")) / ounce
-                data["دولار الصاغة"] = float(round(gold_usd, 2))
-
-            return data
-
-        except Exception as e:
-            log(f"Error: {e}")
-            time.sleep(2)
-
-    return {}
-
-# =====================
-# SMART CORRECTION ENGINE
-# =====================
-karat_map = {
-    "24": 24,
-    "21": 21,
-    "18": 18,
-    "14": 14
-}
-
-def correct_prices(data):
-    corrected = data.copy()
-
-    gold_items = {k: v for k, v in data.items() if "عيار" in k}
-
-    for k in gold_items:
-        try:
-            current = gold_items[k]["sell"]
-            k_num = karat_map[k.split()[1]]
-
-            estimates = []
-
-            for k2 in gold_items:
-                if k2 == k:
-                    continue
-
-                k2_num = karat_map[k2.split()[1]]
-                est = gold_items[k2]["sell"] * (k_num / k2_num)
-                estimates.append(est)
-
-            if not estimates:
+            if not title or len(nums) < 2:
                 continue
 
-            estimated = sum(estimates) / len(estimates)
+            name = title.text.strip()
 
-            # سماحية الخطأ
-            if abs(current - estimated) > 10:
-                corrected[k]["sell"] = round(float(estimated), 2)
-                corrected[k]["buy"] = round(float(estimated - 40), 2)
+            if "عيار" in name:
+                sell = float(D(nums[0].text))
+                buy = float(D(nums[1].text))
 
-        except:
-            continue
+                data[name] = {"sell": sell, "buy": buy}
 
-    return corrected
+        return data
+
+    except Exception as e:
+        log(f"Snapshot error: {e}")
+        return {}
 
 # =====================
-# TELEGRAM SEND
+# ANALYSIS (REFERENCE + CONFIDENCE)
 # =====================
-def send(msg):
-    url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
+karat_map = {"24": 24, "21": 21, "18": 18, "14": 14}
 
-    keyboard = {
-        "inline_keyboard": [
-            [
-                {"text": "🌐 الموقع", "url": "https://andriagold.netlify.app/"},
-                {"text": "📢 القناة", "url": "https://t.me/AndreaGold"}
-            ]
-        ]
+def analyze(data):
+    gold = {k: v for k, v in data.items() if "عيار" in k}
+
+    scores = {}
+
+    for ref in gold:
+        ref_k = karat_map[ref.split()[1]]
+
+        errors = []
+
+        for k in gold:
+            if k == ref:
+                continue
+
+            k_k = karat_map[k.split()[1]]
+            estimated = gold[k]["sell"] * (ref_k / k_k)
+
+            errors.append(abs(gold[ref]["sell"] - estimated))
+
+        scores[ref] = sum(errors) / len(errors) if errors else 9999
+
+    best_ref = min(scores, key=scores.get)
+
+    max_error = max(scores.values()) if scores else 1
+
+    confidence = {
+        k: max(0, 100 - (scores[k] / max_error * 100))
+        for k in scores
     }
 
-    requests.post(url, data={
-        "chat_id": CHANNEL,
-        "text": msg,
-        "parse_mode": "HTML",
-        "reply_markup": json.dumps(keyboard)
-    }, timeout=10)
+    return best_ref, confidence
 
 # =====================
 # FORMAT MESSAGE
 # =====================
-def format_msg(data):
-    msg = "💎 <b>تحديث لحظي للذهب</b>\n\n"
+def format_msg(data, confidence, ref):
+    msg = "💎 <b>Smart Gold System</b>\n\n"
+    msg += f"🧠 المرجع: <b>{ref}</b>\n\n"
     msg += "━━━━━━━━━━━━━━\n"
 
     for k, v in data.items():
-        if isinstance(v, dict):
-            msg += f"🔸 <b>{k}</b>\n"
+        if "عيار" in k:
+            c = confidence.get(k, 0)
+            msg += f"🔸 <b>{k}</b> ({c:.1f}%)\n"
             msg += f"🟢 بيع: {v['sell']} | 🔴 شراء: {v['buy']}\n"
             msg += "──────────────\n"
-        else:
-            msg += f"📌 {k}: <b>{v}</b>\n"
 
     msg += "━━━━━━━━━━━━━━\n"
     return msg
+
+# =====================
+# TELEGRAM
+# =====================
+def send(msg):
+    url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
+    requests.post(url, data={
+        "chat_id": CHANNEL,
+        "text": msg,
+        "parse_mode": "HTML"
+    })
 
 # =====================
 # LOOP
@@ -210,21 +154,23 @@ def loop():
             if not data:
                 continue
 
-            # تصحيح الأسعار
-            data = correct_prices(data)
+            ref, confidence = analyze(data)
+
+            # ⚠️ بدل المنع: مجرد تنبيه داخلي
+            avg_conf = sum(confidence.values()) / len(confidence)
+            if avg_conf < 60:
+                log("⚠️ Market unstable (but still sending)")
 
             page_hash = hashlib.md5(json.dumps(data, sort_keys=True).encode()).hexdigest()
             now = time.time()
 
             if last_hash is None:
-                send(format_msg(data))
+                send(format_msg(data, confidence, ref))
                 last_hash = page_hash
                 last_sent_time = now
-                time.sleep(10)
-                continue
 
-            if page_hash != last_hash and (now - last_sent_time) > 5:
-                send(format_msg(data))
+            elif page_hash != last_hash and (now - last_sent_time) > 5:
+                send(format_msg(data, confidence, ref))
                 last_hash = page_hash
                 last_sent_time = now
 
@@ -239,7 +185,7 @@ def loop():
 # =====================
 @app.route("/")
 def home():
-    return "💎 Smart Gold System Running"
+    return "💎 Smart Gold Running"
 
 @app.route("/api")
 def api():
