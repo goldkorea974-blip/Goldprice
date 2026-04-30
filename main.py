@@ -32,6 +32,10 @@ egypt_tz = pytz.timezone("Africa/Cairo")
 last_hash = None
 last_sent_time = 0
 
+# لتوقع السعر
+price_history = []
+MAX_HISTORY = 5
+
 # =====================
 # LOG
 # =====================
@@ -77,7 +81,7 @@ def get_snapshot():
         return {}
 
 # =====================
-# ANALYSIS (REFERENCE + CONFIDENCE)
+# ANALYSIS
 # =====================
 karat_map = {"24": 24, "21": 21, "18": 18, "14": 14}
 
@@ -114,6 +118,19 @@ def analyze(data):
     return best_ref, confidence
 
 # =====================
+# 📊 PREDICTION ENGINE (WMA)
+# =====================
+def predict_next():
+    if len(price_history) < 3:
+        return None
+
+    p = price_history
+
+    predicted = (p[-1]*3 + p[-2]*2 + p[-3]*1) / 6
+
+    return round(predicted, 2)
+
+# =====================
 # FORMAT MESSAGE
 # =====================
 def format_msg(data, confidence, ref):
@@ -127,6 +144,10 @@ def format_msg(data, confidence, ref):
             msg += f"🔸 <b>{k}</b> ({c:.1f}%)\n"
             msg += f"🟢 بيع: {v['sell']} | 🔴 شراء: {v['buy']}\n"
             msg += "──────────────\n"
+
+    pred = predict_next()
+    if pred:
+        msg += f"\n📈 <b>السعر المتوقع القادم:</b> {pred}\n"
 
     msg += "━━━━━━━━━━━━━━\n"
     return msg
@@ -148,31 +169,43 @@ def send(msg):
 def loop():
     global last_hash, last_sent_time
 
+    first_run = True
+
     while True:
         try:
             data = get_snapshot()
             if not data:
+                time.sleep(5)
                 continue
+
+            # حفظ سعر 24 للتوقع
+            if "عيار 24" in data:
+                price_history.append(data["عيار 24"]["sell"])
+                if len(price_history) > MAX_HISTORY:
+                    price_history.pop(0)
 
             ref, confidence = analyze(data)
 
-            # ⚠️ بدل المنع: مجرد تنبيه داخلي
-            avg_conf = sum(confidence.values()) / len(confidence)
-            if avg_conf < 60:
-                log("⚠️ Market unstable (but still sending)")
+            page_hash = hashlib.md5(
+                json.dumps(data, sort_keys=True).encode()
+            ).hexdigest()
 
-            page_hash = hashlib.md5(json.dumps(data, sort_keys=True).encode()).hexdigest()
             now = time.time()
 
-            if last_hash is None:
+            # أول رسالة
+            if first_run:
                 send(format_msg(data, confidence, ref))
                 last_hash = page_hash
                 last_sent_time = now
+                first_run = False
+                log("🚀 First update sent")
 
+            # تحديث عند التغيير
             elif page_hash != last_hash and (now - last_sent_time) > 5:
                 send(format_msg(data, confidence, ref))
                 last_hash = page_hash
                 last_sent_time = now
+                log("🔄 Update sent")
 
             time.sleep(10)
 
