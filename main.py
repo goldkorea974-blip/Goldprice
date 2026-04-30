@@ -33,7 +33,6 @@ egypt_tz = pytz.timezone("Africa/Cairo")
 # STATE
 # =====================
 last_hash = None
-last_dollar = None
 
 # =====================
 # LOG
@@ -63,8 +62,10 @@ def get_snapshot(retries=3):
             items = soup.find_all("div", class_="price-item")
 
             data = {}
+
             gram_24 = None
             ounce = None
+            market_dollar = None
 
             for item in items:
                 title = item.find("span", class_="font-medium")
@@ -75,6 +76,9 @@ def get_snapshot(retries=3):
 
                 name = title.text.strip()
 
+                # =====================
+                # الذهب
+                # =====================
                 if "عيار" in name and len(nums) >= 2:
                     sell = D(nums[0].text)
                     buy = D(nums[1].text)
@@ -87,28 +91,43 @@ def get_snapshot(retries=3):
                     if "24" in name:
                         gram_24 = sell
 
+                # =====================
+                # الأوقية
+                # =====================
                 if "أوقية" in name or "اونصة" in name or "ounce" in name.lower():
                     ounce = D(nums[0].text)
                     data["الأوقية العالمية"] = str(ounce)
 
-            dollar = None
-            if gram_24 and ounce:
-                dollar = (gram_24 * Decimal("31.1034768")) / ounce
-                data["دولار الصاغة"] = f"{dollar:.2f}"
+                # =====================
+                # الدولار الأمريكي (من الموقع)
+                # =====================
+                if "الدولار الأمريكي" in name or "USD" in name:
+                    market_dollar = D(nums[0].text)
+                    data["الدولار الأمريكي"] = str(market_dollar)
 
-            # 🔥 HASH للتغيير
+            # =====================
+            # دولار الصاغة
+            # =====================
+            gold_dollar = None
+            if gram_24 and ounce:
+                gold_dollar = (gram_24 * Decimal("31.1034768")) / ounce
+                data["دولار الصاغة"] = f"{gold_dollar:.2f}"
+
+            # =====================
+            # HASH للتغيير
+            # =====================
             page_hash = hashlib.md5(str(data).encode()).hexdigest()
 
-            return data, dollar, page_hash
+            return data, market_dollar, gold_dollar, page_hash
 
         except Exception as e:
             log(f"Error: {e}")
             time.sleep(2)
 
-    return {}, None, None
+    return {}, None, None, None
 
 # =====================
-# TELEGRAM
+# TELEGRAM SEND
 # =====================
 def send(msg):
     url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
@@ -130,7 +149,7 @@ def send(msg):
     }, timeout=10)
 
 # =====================
-# FORMAT
+# FORMAT MESSAGE
 # =====================
 def format_msg(data):
     msg = "💎 <b>تحديث لحظي للذهب</b>\n\n"
@@ -151,30 +170,26 @@ def format_msg(data):
 # LOOP (LIVE SYSTEM)
 # =====================
 def loop():
-    global last_hash, last_dollar
+    global last_hash
 
     while True:
         try:
-            data, dollar, page_hash = get_snapshot()
+            data, market_dollar, gold_dollar, page_hash = get_snapshot()
 
             if not data:
                 continue
 
-            # 🔥 أول تشغيل
+            # أول تشغيل
             if last_hash is None:
                 send(format_msg(data))
                 last_hash = page_hash
-                last_dollar = dollar
                 time.sleep(10)
                 continue
 
-            # 🔥 أي تغيير مهما كان صغير
+            # أي تغيير
             if page_hash != last_hash:
-
                 send(format_msg(data))
-
                 last_hash = page_hash
-                last_dollar = dollar
 
             time.sleep(10)
 
@@ -191,7 +206,7 @@ def home():
 
 @app.route("/api")
 def api():
-    data, _, _ = get_snapshot()
+    data, _, _, _ = get_snapshot()
     return jsonify(data)
 
 # =====================
