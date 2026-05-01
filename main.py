@@ -19,7 +19,7 @@ app = Flask(__name__)
 # =====================
 # CONFIG (SECURE)
 # =====================
-TOKEN = os.getenv("8165343576:AAHjfPZpUUUDvWk3WbC1XocQ_MGQ1aESLT0")
+TOKEN = "8165343576:AAHjfPZpUUUDvWk3WbC1XocQ_MGQ1aESLT0"
 CHANNEL = "@AndriaGold"
 URL = "https://edahabapp.com/"
 API_KEY = os.getenv("API_KEY")
