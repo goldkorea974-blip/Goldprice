@@ -18,7 +18,7 @@ app = Flask(__name__)
 # =====================
 # CONFIG
 # =====================
-TOKEN = "8165343576:AAGr_uWTBUMGCgcdahiCicHN3DehLaBOUf0"
+TOKEN = "8165343576:AAHjfPZpUUUDvWk3WbC1XocQ_MGQ1aESLT0"
 CHANNEL = "@AndriaGold"
 URL = "https://edahabapp.com/"
 
