@@ -33,6 +33,8 @@ egypt_tz = pytz.timezone("Africa/Cairo")
 # STATE
 # =====================
 last_hash = None
+last_data = None
+sent_close_msg = False
 
 # =====================
 # LOG
@@ -76,9 +78,7 @@ def get_snapshot(retries=3):
 
                 name = title.text.strip()
 
-                # =====================
                 # الذهب
-                # =====================
                 if "عيار" in name and len(nums) >= 2:
                     sell = D(nums[0].text)
                     buy = D(nums[1].text)
@@ -91,31 +91,22 @@ def get_snapshot(retries=3):
                     if "24" in name:
                         gram_24 = sell
 
-                # =====================
                 # الأوقية
-                # =====================
                 if "أوقية" in name or "اونصة" in name or "ounce" in name.lower():
                     ounce = D(nums[0].text)
                     data["الأوقية العالمية"] = str(ounce)
 
-                # =====================
-                # الدولار الأمريكي (من الموقع)
-                # =====================
+                # الدولار
                 if "الدولار الأمريكي" in name or "USD" in name:
                     market_dollar = D(nums[0].text)
                     data["الدولار الأمريكي"] = str(market_dollar)
 
-            # =====================
             # دولار الصاغة
-            # =====================
             gold_dollar = None
             if gram_24 and ounce:
                 gold_dollar = (gram_24 * Decimal("31.1034768")) / ounce
                 data["دولار الصاغة"] = f"{gold_dollar:.2f}"
 
-            # =====================
-            # HASH للتغيير
-            # =====================
             page_hash = hashlib.md5(str(data).encode()).hexdigest()
 
             return data, market_dollar, gold_dollar, page_hash
@@ -167,31 +158,68 @@ def format_msg(data):
     return msg
 
 # =====================
-# LOOP (LIVE SYSTEM)
+# LOOP
 # =====================
 def loop():
-    global last_hash
+    global last_hash, last_data, sent_close_msg
 
     while True:
         try:
-            data, market_dollar, gold_dollar, page_hash = get_snapshot()
+            now = datetime.now(egypt_tz)
+            hour = now.hour
 
-            if not data:
-                continue
+            # ⏰ وقت العمل
+            if 10 <= hour < 24:
+                sent_close_msg = False
 
-            # أول تشغيل
-            if last_hash is None:
-                send(format_msg(data))
-                last_hash = page_hash
+                data, market_dollar, gold_dollar, page_hash = get_snapshot()
+
+                if not data:
+                    time.sleep(10)
+                    continue
+
+                # أول تشغيل
+                if last_hash is None:
+                    send(format_msg(data))
+                    last_hash = page_hash
+                    last_data = data
+                    time.sleep(10)
+                    continue
+
+                # لو في تغيير
+                if page_hash != last_hash:
+                    send(format_msg(data))
+                    last_hash = page_hash
+                    last_data = data
+
                 time.sleep(10)
-                continue
 
-            # أي تغيير
-            if page_hash != last_hash:
-                send(format_msg(data))
-                last_hash = page_hash
+            else:
+                # 🌙 رسالة الإغلاق
+                if not sent_close_msg:
+                    close_msg = "🌙 <b>إغلاق سوق الذهب اليوم</b>\n\n"
 
-            time.sleep(10)
+                    if last_data:
+                        close_msg += "📊 <b>آخر تحديث قبل الإغلاق:</b>\n"
+                        close_msg += "━━━━━━━━━━━━━━\n"
+
+                        for k, v in last_data.items():
+                            if isinstance(v, dict):
+                                close_msg += f"🔸 <b>{k}</b>\n"
+                                close_msg += f"🟢 بيع: {v['sell']} | 🔴 شراء: {v['buy']}\n"
+                                close_msg += "──────────────\n"
+                            else:
+                                close_msg += f"📌 {k}: <b>{v}</b>\n"
+
+                        close_msg += "━━━━━━━━━━━━━━\n"
+
+                    close_msg += "\nشكراً لمتابعتكم ❤️\n"
+                    close_msg += "نلقاكم غداً الساعة 10 صباحاً 💎"
+
+                    send(close_msg)
+                    sent_close_msg = True
+
+                time.sleep(60)
 
         except Exception as e:
             log(f"Loop error: {e}")
