@@ -3,9 +3,10 @@ import time
 import json
 import hashlib
 import requests
+import random
 from bs4 import BeautifulSoup
 from decimal import Decimal, getcontext
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request
 from threading import Thread
 from datetime import datetime
 import pytz
@@ -16,11 +17,12 @@ import pytz
 app = Flask(__name__)
 
 # =====================
-# CONFIG
+# CONFIG (SECURE)
 # =====================
-TOKEN = "8165343576:AAHjfPZpUUUDvWk3WbC1XocQ_MGQ1aESLT0"
+TOKEN = os.getenv("8165343576:AAHjfPZpUUUDvWk3WbC1XocQ_MGQ1aESLT0")
 CHANNEL = "@AndriaGold"
 URL = "https://edahabapp.com/"
+API_KEY = os.getenv("API_KEY")
 
 getcontext().prec = 28
 
@@ -35,6 +37,7 @@ egypt_tz = pytz.timezone("Africa/Cairo")
 last_hash = None
 last_data = None
 sent_close_msg = False
+fail_count = 0
 
 # =====================
 # LOG
@@ -52,14 +55,18 @@ def D(x):
 # SNAPSHOT
 # =====================
 def get_snapshot(retries=3):
+    global fail_count
+
+    headers = {
+        "User-Agent": "Mozilla/5.0",
+        "Accept-Language": "en-US,en;q=0.9",
+    }
+
     for attempt in range(retries):
         try:
-            html = requests.get(
-                URL,
-                headers={"User-Agent": "Mozilla/5.0"},
-                timeout=10
-            ).text
+            time.sleep(2 + random.randint(0, 3))  # حماية من الحظر
 
+            html = requests.get(URL, headers=headers, timeout=10).text
             soup = BeautifulSoup(html, "html.parser")
             items = soup.find_all("div", class_="price-item")
 
@@ -67,7 +74,6 @@ def get_snapshot(retries=3):
 
             gram_24 = None
             ounce = None
-            market_dollar = None
 
             for item in items:
                 title = item.find("span", class_="font-medium")
@@ -83,39 +89,36 @@ def get_snapshot(retries=3):
                     sell = D(nums[0].text)
                     buy = D(nums[1].text)
 
-                    data[name] = {
-                        "buy": str(buy),
-                        "sell": str(sell)
-                    }
+                    data[name] = {"buy": str(buy), "sell": str(sell)}
 
                     if "24" in name:
                         gram_24 = sell
 
                 # الأوقية
-                if "أوقية" in name or "اونصة" in name or "ounce" in name.lower():
+                if "أوقية" in name or "ounce" in name.lower():
                     ounce = D(nums[0].text)
                     data["الأوقية العالمية"] = str(ounce)
 
                 # الدولار
-                if "الدولار الأمريكي" in name or "USD" in name:
-                    market_dollar = D(nums[0].text)
-                    data["الدولار الأمريكي"] = str(market_dollar)
+                if "USD" in name or "الدولار" in name:
+                    data["الدولار الأمريكي"] = str(D(nums[0].text))
 
             # دولار الصاغة
-            gold_dollar = None
             if gram_24 and ounce:
                 gold_dollar = (gram_24 * Decimal("31.1034768")) / ounce
                 data["دولار الصاغة"] = f"{gold_dollar:.2f}"
 
             page_hash = hashlib.md5(str(data).encode()).hexdigest()
 
-            return data, market_dollar, gold_dollar, page_hash
+            fail_count = 0
+            return data, page_hash
 
         except Exception as e:
+            fail_count += 1
             log(f"Error: {e}")
-            time.sleep(2)
+            time.sleep(3)
 
-    return {}, None, None, None
+    return {}, None
 
 # =====================
 # TELEGRAM SEND
@@ -140,22 +143,18 @@ def send(msg):
     }, timeout=10)
 
 # =====================
-# FORMAT MESSAGE
+# FORMAT
 # =====================
 def format_msg(data):
-    msg = "💎 <b>تحديث لحظي للذهب</b>\n\n"
-    msg += "━━━━━━━━━━━━━━\n"
+    msg = "💎 <b>تحديث لحظي للذهب</b>\n\n━━━━━━━━━━━━━━\n"
 
     for k, v in data.items():
         if isinstance(v, dict):
-            msg += f"🔸 <b>{k}</b>\n"
-            msg += f"🟢 بيع: {v['sell']} | 🔴 شراء: {v['buy']}\n"
-            msg += "──────────────\n"
+            msg += f"🔸 <b>{k}</b>\n🟢 بيع: {v['sell']} | 🔴 شراء: {v['buy']}\n──────────────\n"
         else:
             msg += f"📌 {k}: <b>{v}</b>\n"
 
-    msg += "━━━━━━━━━━━━━━\n"
-    return msg
+    return msg + "━━━━━━━━━━━━━━\n"
 
 # =====================
 # LOOP
@@ -168,17 +167,16 @@ def loop():
             now = datetime.now(egypt_tz)
             hour = now.hour
 
-            # ⏰ وقت العمل
+            # ⏰ تشغيل السوق
             if 10 <= hour < 24:
                 sent_close_msg = False
 
-                data, market_dollar, gold_dollar, page_hash = get_snapshot()
+                data, page_hash = get_snapshot()
 
                 if not data:
                     time.sleep(10)
                     continue
 
-                # أول تشغيل
                 if last_hash is None:
                     send(format_msg(data))
                     last_hash = page_hash
@@ -186,7 +184,6 @@ def loop():
                     time.sleep(10)
                     continue
 
-                # لو في تغيير
                 if page_hash != last_hash:
                     send(format_msg(data))
                     last_hash = page_hash
@@ -195,28 +192,24 @@ def loop():
                 time.sleep(10)
 
             else:
-                # 🌙 رسالة الإغلاق
+                # 🌙 إغلاق السوق
                 if not sent_close_msg:
-                    close_msg = "🌙 <b>إغلاق سوق الذهب اليوم</b>\n\n"
+                    msg = "🌙 <b>إغلاق سوق الذهب اليوم</b>\n\n"
 
                     if last_data:
-                        close_msg += "📊 <b>آخر تحديث قبل الإغلاق:</b>\n"
-                        close_msg += "━━━━━━━━━━━━━━\n"
+                        msg += "📊 <b>آخر سعر قبل الإغلاق:</b>\n━━━━━━━━━━━━━━\n"
 
                         for k, v in last_data.items():
                             if isinstance(v, dict):
-                                close_msg += f"🔸 <b>{k}</b>\n"
-                                close_msg += f"🟢 بيع: {v['sell']} | 🔴 شراء: {v['buy']}\n"
-                                close_msg += "──────────────\n"
+                                msg += f"🔸 <b>{k}</b>\n🟢 بيع: {v['sell']} | 🔴 شراء: {v['buy']}\n──────────────\n"
                             else:
-                                close_msg += f"📌 {k}: <b>{v}</b>\n"
+                                msg += f"📌 {k}: <b>{v}</b>\n"
 
-                        close_msg += "━━━━━━━━━━━━━━\n"
+                        msg += "━━━━━━━━━━━━━━\n"
 
-                    close_msg += "\nشكراً لمتابعتكم ❤️\n"
-                    close_msg += "نلقاكم غداً الساعة 10 صباحاً 💎"
+                    msg += "\n❤️ شكراً لمتابعتكم\n💎 نلقاكم 10 صباحاً"
 
-                    send(close_msg)
+                    send(msg)
                     sent_close_msg = True
 
                 time.sleep(60)
@@ -226,16 +219,21 @@ def loop():
             time.sleep(5)
 
 # =====================
-# API
+# API (SECURE)
 # =====================
-@app.route("/")
-def home():
-    return "💎 Live Gold System Running"
-
 @app.route("/api")
 def api():
-    data, _, _, _ = get_snapshot()
+    key = request.args.get("key")
+
+    if key != API_KEY:
+        return jsonify({"error": "unauthorized"}), 403
+
+    data, _ = get_snapshot()
     return jsonify(data)
+
+@app.route("/")
+def home():
+    return "💎 Live Gold System Running Secure"
 
 # =====================
 # START
