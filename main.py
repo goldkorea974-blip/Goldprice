@@ -1,4 +1,3 @@
-
 import os
 import time
 import json
@@ -115,7 +114,6 @@ def get_snapshot(retries=3):
                 time.sleep(3)
                 continue
 
-            # Sort keys for consistent hash
             sorted_data = dict(sorted(data.items()))
             page_hash = hashlib.md5(str(sorted_data).encode()).hexdigest()
 
@@ -176,15 +174,15 @@ def send(msg, retries=3):
 # FORMAT
 # =====================
 def format_msg(data):
-    msg = "💎 <b>تحديث لحظي للذهب</b>\\n\\n━━━━━━━━━━━━━━\\n"
+    msg = "💎 <b>تحديث لحظي للذهب</b>\n\n━━━━━━━━━━━━━━\n"
 
     for k, v in data.items():
         if isinstance(v, dict):
-            msg += f"🔸 <b>{k}</b>\\n🟢 بيع: {v['sell']} | 🔴 شراء: {v['buy']}\\n──────────────\\n"
+            msg += f"🔸 <b>{k}</b>\n🟢 بيع: {v['sell']} | 🔴 شراء: {v['buy']}\n──────────────\n"
         else:
-            msg += f"📌 {k}: <b>{v}</b>\\n"
+            msg += f"📌 {k}: <b>{v}</b>\n"
 
-    return msg + "━━━━━━━━━━━━━━\\n"
+    return msg + "━━━━━━━━━━━━━━\n"
 
 # =====================
 # LOOP
@@ -237,20 +235,20 @@ def loop():
 
             else:
                 if not sent_close_msg:
-                    msg = "🌙 <b>إغلاق سوق الذهب اليوم</b>\\n\\n"
+                    msg = "🌙 <b>إغلاق سوق الذهب اليوم</b>\n\n"
 
                     if last_data:
-                        msg += "📊 <b>آخر سعر قبل الإغلاق:</b>\\n━━━━━━━━━━━━━━\\n"
+                        msg += "📊 <b>آخر سعر قبل الإغلاق:</b>\n━━━━━━━━━━━━━━\n"
 
                         for k, v in last_data.items():
                             if isinstance(v, dict):
-                                msg += f"🔸 <b>{k}</b>\\n🟢 بيع: {v['sell']} | 🔴 شراء: {v['buy']}\\n──────────────\\n"
+                                msg += f"🔸 <b>{k}</b>\n🟢 بيع: {v['sell']} | 🔴 شراء: {v['buy']}\n──────────────\n"
                             else:
-                                msg += f"📌 {k}: <b>{v}</b>\\n"
+                                msg += f"📌 {k}: <b>{v}</b>\n"
 
-                        msg += "━━━━━━━━━━━━━━\\n"
+                        msg += "━━━━━━━━━━━━━━\n"
 
-                    msg += "\\n❤️ شكراً لمتابعتكم\\n💎 نلقاكم 10 صباحاً"
+                    msg += "\n❤️ شكراً لمتابعتكم\n💎 نلقاكم 10 صباحاً"
 
                     send(msg)
                     sent_close_msg = True
@@ -295,9 +293,3 @@ def home():
 if __name__ == "__main__":
     Thread(target=loop, daemon=True).start()
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
-'''
-
-with open('/mnt/agents/output/gold_bot_improved.py', 'w', encoding='utf-8') as f:
-    f.write(code)
-
-print("File saved successfully!")
