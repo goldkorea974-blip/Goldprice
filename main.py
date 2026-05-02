@@ -9,7 +9,7 @@ from bs4 import BeautifulSoup
 from decimal import Decimal, getcontext
 from flask import Flask, jsonify, request
 from threading import Thread
-from datetime import datetime
+from datetime import datetime, timedelta
 import pytz
 
 # =====================
@@ -53,10 +53,63 @@ fail_count = 0
 MAX_FAILS = 5
 
 # =====================
+# DAILY STATS
+# =====================
+daily_high = {}
+daily_low = {}
+daily_sums = {}
+yesterday_close = {}
+
+# =====================
 # CLEAN DECIMAL
 # =====================
 def D(x):
     return Decimal(x.replace(",", "").strip())
+
+# =====================
+# STATS HELPERS
+# =====================
+def reset_daily_stats():
+    global daily_high, daily_low, daily_sums
+    daily_high = {}
+    daily_low = {}
+    daily_sums = {}
+    log.info("Daily stats reset")
+
+def update_stats(data):
+    global daily_high, daily_low, daily_sums
+    now_str = datetime.now(egypt_tz).strftime("%I:%M %p")
+
+    for k, v in data.items():
+        if not isinstance(v, dict):
+            continue
+        sell = D(v["sell"])
+        buy = D(v["buy"])
+
+        if k not in daily_high or sell > daily_high[k]["sell"]:
+            daily_high[k] = {"sell": sell, "buy": buy, "time": now_str}
+
+        if k not in daily_low or sell < daily_low[k]["sell"]:
+            daily_low[k] = {"sell": sell, "buy": buy, "time": now_str}
+
+        if k not in daily_sums:
+            daily_sums[k] = {"sell_sum": Decimal("0"), "buy_sum": Decimal("0"), "count": 0}
+        daily_sums[k]["sell_sum"] += sell
+        daily_sums[k]["buy_sum"] += buy
+        daily_sums[k]["count"] += 1
+
+def get_avg(k):
+    if k not in daily_sums or daily_sums[k]["count"] == 0:
+        return None, None
+    s = daily_sums[k]
+    avg_sell = s["sell_sum"] / s["count"]
+    avg_buy = s["buy_sum"] / s["count"]
+    return avg_sell, avg_buy
+
+def pct_change(current, previous):
+    if previous is None or previous == 0:
+        return None
+    return ((current - previous) / previous) * 100
 
 # =====================
 # SNAPSHOT
@@ -185,10 +238,48 @@ def format_msg(data):
     return msg + "━━━━━━━━━━━━━━\n"
 
 # =====================
+# FORMAT CLOSE (WITH STATS)
+# =====================
+def format_close_msg(data):
+    msg = "🌙 <b>إغلاق سوق الذهب اليوم</b>\n\n"
+
+    if data:
+        msg += "📊 <b>آخر سعر قبل الإغلاق:</b>\n━━━━━━━━━━━━━━\n"
+
+        for k, v in data.items():
+            if isinstance(v, dict):
+                msg += f"🔸 <b>{k}</b>\n🟢 بيع: {v['sell']} | 🔴 شراء: {v['buy']}\n"
+
+                if k in daily_high and k in daily_low:
+                    msg += f"📈 أعلى: {daily_high[k]['sell']} ({daily_high[k]['time']})\n"
+                    msg += f"📉 أقل: {daily_low[k]['sell']} ({daily_low[k]['time']})\n"
+
+                avg_sell, avg_buy = get_avg(k)
+                if avg_sell is not None:
+                    msg += f"📊 متوسط: {avg_sell:.2f}\n"
+
+                if k in yesterday_close:
+                    y_sell = D(yesterday_close[k]["sell"])
+                    c_sell = D(v["sell"])
+                    change = pct_change(c_sell, y_sell)
+                    if change is not None:
+                        arrow = "⬆️" if change > 0 else "⬇️" if change < 0 else "➖"
+                        msg += f"{arrow} مقارنة بأمس: {change:+.2f}%\n"
+
+                msg += "──────────────\n"
+            else:
+                msg += f"📌 {k}: <b>{v}</b>\n"
+
+        msg += "━━━━━━━━━━━━━━\n"
+
+    msg += "\n❤️ شكراً لمتابعتكم\n💎 نلقاكم 10 صباحاً"
+    return msg
+
+# =====================
 # LOOP
 # =====================
 def loop():
-    global last_hash, last_data, sent_close_msg, sent_open_msg
+    global last_hash, last_data, sent_close_msg, sent_open_msg, yesterday_close
 
     while True:
         try:
@@ -204,6 +295,8 @@ def loop():
                     data, page_hash = get_snapshot()
 
                     if data:
+                        reset_daily_stats()
+                        update_stats(data)
                         send(format_msg(data))
                         last_hash = page_hash
                         last_data = data
@@ -218,6 +311,8 @@ def loop():
                 if not data:
                     time.sleep(10)
                     continue
+
+                update_stats(data)
 
                 if last_hash is None:
                     send(format_msg(data))
@@ -235,22 +330,13 @@ def loop():
 
             else:
                 if not sent_close_msg:
-                    msg = "🌙 <b>إغلاق سوق الذهب اليوم</b>\n\n"
-
                     if last_data:
-                        msg += "📊 <b>آخر سعر قبل الإغلاق:</b>\n━━━━━━━━━━━━━━\n"
-
+                        yesterday_close = {}
                         for k, v in last_data.items():
                             if isinstance(v, dict):
-                                msg += f"🔸 <b>{k}</b>\n🟢 بيع: {v['sell']} | 🔴 شراء: {v['buy']}\n──────────────\n"
-                            else:
-                                msg += f"📌 {k}: <b>{v}</b>\n"
+                                yesterday_close[k] = {"sell": v["sell"], "buy": v["buy"]}
 
-                        msg += "━━━━━━━━━━━━━━\n"
-
-                    msg += "\n❤️ شكراً لمتابعتكم\n💎 نلقاكم 10 صباحاً"
-
-                    send(msg)
+                    send(format_close_msg(last_data))
                     sent_close_msg = True
 
                 sent_open_msg = False
@@ -280,7 +366,9 @@ def health():
         "last_data": bool(last_data),
         "fail_count": fail_count,
         "sent_open": sent_open_msg,
-        "sent_close": sent_close_msg
+        "sent_close": sent_close_msg,
+        "daily_high": {k: {"sell": str(v["sell"]), "time": v["time"]} for k, v in daily_high.items()},
+        "daily_low": {k: {"sell": str(v["sell"]), "time": v["time"]} for k, v in daily_low.items()}
     })
 
 @app.route("/")
