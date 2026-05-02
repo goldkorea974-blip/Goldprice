@@ -37,6 +37,7 @@ egypt_tz = pytz.timezone("Africa/Cairo")
 last_hash = None
 last_data = None
 sent_close_msg = False
+sent_open_msg = False
 fail_count = 0
 
 # =====================
@@ -64,7 +65,7 @@ def get_snapshot(retries=3):
 
     for attempt in range(retries):
         try:
-            time.sleep(2 + random.randint(0, 3))  # حماية من الحظر
+            time.sleep(2 + random.randint(0, 3))
 
             html = requests.get(URL, headers=headers, timeout=10).text
             soup = BeautifulSoup(html, "html.parser")
@@ -84,26 +85,21 @@ def get_snapshot(retries=3):
 
                 name = title.text.strip()
 
-                # الذهب
                 if "عيار" in name and len(nums) >= 2:
                     sell = D(nums[0].text)
                     buy = D(nums[1].text)
-
                     data[name] = {"buy": str(buy), "sell": str(sell)}
 
                     if "24" in name:
                         gram_24 = sell
 
-                # الأوقية
                 if "أوقية" in name or "ounce" in name.lower():
                     ounce = D(nums[0].text)
                     data["الأوقية العالمية"] = str(ounce)
 
-                # الدولار
                 if "USD" in name or "الدولار" in name:
                     data["الدولار الأمريكي"] = str(D(nums[0].text))
 
-            # دولار الصاغة
             if gram_24 and ounce:
                 gold_dollar = (gram_24 * Decimal("31.1034768")) / ounce
                 data["دولار الصاغة"] = f"{gold_dollar:.2f}"
@@ -160,17 +156,31 @@ def format_msg(data):
 # LOOP
 # =====================
 def loop():
-    global last_hash, last_data, sent_close_msg
+    global last_hash, last_data, sent_close_msg, sent_open_msg
 
     while True:
         try:
             now = datetime.now(egypt_tz)
             hour = now.hour
+            log(f"Current hour: {hour}")
 
-            # ⏰ تشغيل السوق
             if 10 <= hour < 24:
                 sent_close_msg = False
 
+                # 🔥 رسالة فتح السوق (إجبارية)
+                if not sent_open_msg:
+                    log("Market opened → forcing first send")
+                    data, page_hash = get_snapshot()
+
+                    if data:
+                        send(format_msg(data))
+                        last_hash = page_hash
+                        last_data = data
+                        sent_open_msg = True
+                    else:
+                        log("No data yet after open")
+
+                # 📊 التحديث الطبيعي
                 data, page_hash = get_snapshot()
 
                 if not data:
@@ -192,7 +202,6 @@ def loop():
                 time.sleep(10)
 
             else:
-                # 🌙 إغلاق السوق
                 if not sent_close_msg:
                     msg = "🌙 <b>إغلاق سوق الذهب اليوم</b>\n\n"
 
@@ -211,6 +220,9 @@ def loop():
 
                     send(msg)
                     sent_close_msg = True
+
+                # 🔄 إعادة ضبط الفتح لليوم الجديد
+                sent_open_msg = False
 
                 time.sleep(60)
 
